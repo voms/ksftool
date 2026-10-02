@@ -32,6 +32,14 @@ in
       services.xserver.enable = true;
       services.xserver.displayManager.lightdm.enable = true;
       services.xserver.desktopManager.xfce.enable = true;
+      # A slow run (no KVM) mustn't end with a blank or locked screen in the screenshot.
+      services.xserver.desktopManager.xfce.enableScreensaver = false;
+      services.xserver.serverFlagsSection = ''
+        Option "BlankTime" "0"
+        Option "StandbyTime" "0"
+        Option "SuspendTime" "0"
+        Option "OffTime" "0"
+      '';
       services.displayManager.autoLogin = {
         enable = true;
         user = "alice";
