@@ -95,6 +95,14 @@ namespace KsfCompanion
                 return 0;
             }
 
+            // Avalonia draws with X11 (XWayland on Wayland desktops).
+            if (OperatingSystem.IsLinux() && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")))
+            {
+                Console.Error.WriteLine($"{AppName} needs your desktop session for its window and tray icon, and there's no X11 display " +
+                                        "here (DISPLAY isn't set). On Wayland it runs through XWayland.");
+                return 1;
+            }
+
             // Never pop an error dialog over a fullscreen game; write it to a file instead.
             AppDomain.CurrentDomain.UnhandledException += (s, e) => LogError(e.ExceptionObject as Exception);
             TaskScheduler.UnobservedTaskException += (s, e) =>
