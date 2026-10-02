@@ -42,17 +42,17 @@ namespace KsfCompanion
                 return null;
             }
 
-            var socketPath = basePath + ".sock";
+            var endpoint = Endpoint(basePath, out var socketPath);
             Socket listener = null;
             try
             {
                 // Left over from a copy that didn't get to clean up.
-                if (File.Exists(socketPath)) File.Delete(socketPath);
+                if (socketPath != null && File.Exists(socketPath)) File.Delete(socketPath);
                 listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-                listener.Bind(new UnixDomainSocketEndPoint(socketPath));
+                listener.Bind(endpoint);
                 listener.Listen(4);
             }
-            catch (Exception ex) when (ex is SocketException || ex is IOException || ex is UnauthorizedAccessException)
+            catch (Exception ex) when (ex is SocketException || ex is IOException || ex is UnauthorizedAccessException || ex is ArgumentException)
             {
                 // Still the only copy; it just can't be asked to show itself.
                 Program.Trace("single instance socket: " + ex.Message);
@@ -62,6 +62,18 @@ namespace KsfCompanion
             var instance = new SingleInstance(lockFile, listener, socketPath);
             if (listener != null) _ = instance.AcceptAsync();
             return instance;
+        }
+
+        /// <summary>
+        /// The socket next to the lock - or, when that path is too long for a Unix socket (107 bytes), a name made from it
+        /// in Linux's abstract socket namespace (not a file: nothing to clean up, and socketPath is null).
+        /// </summary>
+        static UnixDomainSocketEndPoint Endpoint(string basePath, out string socketPath)
+        {
+            socketPath = basePath + ".sock";
+            if (Encoding.UTF8.GetByteCount(socketPath) <= 107) return new UnixDomainSocketEndPoint(socketPath);
+            socketPath = null;
+            return new UnixDomainSocketEndPoint("\0" + Program.AppId + "-" + Program.Hash(basePath));
         }
 
         async Task AcceptAsync()
@@ -88,10 +100,10 @@ namespace KsfCompanion
             try
             {
                 using var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-                socket.Connect(new UnixDomainSocketEndPoint(basePath + ".sock"));
+                socket.Connect(Endpoint(basePath, out _));
                 socket.Send(Encoding.ASCII.GetBytes("show\n"));
             }
-            catch (SocketException) { }
+            catch (Exception ex) when (ex is SocketException || ex is ArgumentException) { }
         }
 
         public void Dispose()
@@ -99,7 +111,7 @@ namespace KsfCompanion
             if (disposed) return;
             disposed = true;
             listener?.Dispose();
-            try { if (listener != null) File.Delete(socketPath); }
+            try { if (listener != null && socketPath != null) File.Delete(socketPath); }
             catch (IOException) { }
             lockFile.Dispose();
         }

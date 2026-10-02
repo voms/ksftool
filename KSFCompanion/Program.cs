@@ -67,7 +67,8 @@ namespace KsfCompanion
             ? ""
             : "." + Hash(Path.GetFullPath(DataDir));
 
-        static string Hash(string text)
+        /// <summary>A short name for a path (8 hex digits).</summary>
+        internal static string Hash(string text)
         {
             var bytes = System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(text));
             return Convert.ToHexString(bytes, 0, 4).ToLowerInvariant();
@@ -88,8 +89,9 @@ namespace KsfCompanion
             using var instance = SingleInstance.TryStart(Path.Combine(RuntimeDir, AppId + InstanceScope));
             if (instance == null)
             {
-                // Already running in the tray: ask that copy to bring its dashboard up instead.
-                SingleInstance.AskToShow(Path.Combine(RuntimeDir, AppId + InstanceScope));
+                // Already running in the tray: ask that copy to bring its dashboard up instead (but not when this is
+                // just a second autostart).
+                if (!args.Contains("--background")) SingleInstance.AskToShow(Path.Combine(RuntimeDir, AppId + InstanceScope));
                 return 0;
             }
 

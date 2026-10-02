@@ -395,6 +395,15 @@ namespace KsfCompanion
             first.ShowRequested += shown.Set;
             SingleInstance.AskToShow(basePath);
             Check("starting it again shows the dashboard of the first", shown.Wait(TimeSpan.FromSeconds(3)));
+
+            // A folder too deep for a Unix socket's path (107 bytes).
+            var deep = Path.Combine(root, new string('d', 60), new string('e', 60), Program.AppId);
+            using var deepFirst = SingleInstance.TryStart(deep);
+            Check("a copy runs from a deep folder", deepFirst != null);
+            var deepShown = new ManualResetEventSlim();
+            deepFirst.ShowRequested += deepShown.Set;
+            SingleInstance.AskToShow(deep);
+            Check("and can still be asked to show itself", deepShown.Wait(TimeSpan.FromSeconds(3)));
         }
 
         static void Ui(string root)
