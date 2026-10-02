@@ -1,0 +1,17 @@
+# Builds the Nix package and runs its checks (the app's own tests and the NixOS module) on every push and pull request.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+
+      - name: nix flake check
+        run: nix flake check -L

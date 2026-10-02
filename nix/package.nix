@@ -77,10 +77,7 @@ buildDotnetModule (finalAttrs: {
       exec = "ksf-companion";
       icon = "ksf-companion";
       startupWMClass = "ksf-companion";
-      categories = [
-        "Game"
-        "Utility"
-      ];
+      categories = [ "Game" ];
       keywords = [
         "ksf"
         "surf"

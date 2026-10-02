@@ -168,7 +168,7 @@ namespace KsfCompanion
         public override string ToString() => string.Join("|", Keys.Select(k => k.Key + "=" + k.Value));
     }
 
-    /// <summary>Source engine key names (what "bind" takes), from Windows keys and mouse buttons, and how to show them.</summary>
+    /// <summary>Source engine key names (what "bind" takes), from keyboard keys and mouse buttons, and how to show them.</summary>
     static class GameKeys
     {
         static readonly HashSet<string> Named = new HashSet<string>(StringComparer.OrdinalIgnoreCase)

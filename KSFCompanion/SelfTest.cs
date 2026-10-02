@@ -213,6 +213,13 @@ namespace KsfCompanion
                                     for (var i = 0; i < 3; i++) await stream.WriteAsync(Reply(packet.Id, RconClient.ResponseValue, new string((char)('a' + i), 4000)));
                                 else if (packet.Body == "status")
                                     await stream.WriteAsync(Reply(packet.Id, RconClient.ResponseValue, "hostname: KSF - Beginner EU\nudp/ip  : 192.0.2.10:27015\n"));
+                                else if (packet.Body == "busy")
+                                {
+                                    // Loading a map: half an answer, then nothing for a while.
+                                    var answer = Reply(packet.Id, RconClient.ResponseValue, "loading");
+                                    await stream.WriteAsync(answer.AsMemory(0, 6));
+                                    await Task.Delay(TimeSpan.FromSeconds(3));
+                                }
                             }
                             else if (packet.Type == RconClient.ResponseValue)
                             {
@@ -244,13 +251,18 @@ namespace KsfCompanion
                 Check("a long answer in several packets", big?.Length == 12000 && big[0] == 'a' && big[11999] == 'c', big?.Length.ToString());
                 Check("a command with no answer", link.SendAsync("sm_rtv", TimeSpan.FromSeconds(3)).GetAwaiter().GetResult() == "");
                 lock (console.Commands) Check("the commands arrive as sent", console.Commands.Last() == "sm_rtv");
+                Check("a busy game times out", link.SendAsync("busy", TimeSpan.FromSeconds(0.5)).GetAwaiter().GetResult() == null && !link.Lost);
+                Check("and the next command still gets its own answer", link.SendAsync("echo after", TimeSpan.FromSeconds(3)).GetAwaiter().GetResult() == "after\n");
             }
             var unused = new TcpListener(IPAddress.Loopback, 0);
             unused.Start();
             var closedPort = ((IPEndPoint)unused.LocalEndpoint).Port;
             unused.Stop();
             using (var nobody = new GameLink(closedPort, "x"))
+            {
                 Check("nothing listening is told apart", nobody.OpenAsync().GetAwaiter().GetResult() == LinkProblem.NotListening);
+                Check("and counts as lost", nobody.SendAsync("status", TimeSpan.FromSeconds(1)).GetAwaiter().GetResult() == null && nobody.Lost);
+            }
         }
 
         static void Open(string root)

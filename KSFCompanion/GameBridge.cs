@@ -101,7 +101,8 @@ namespace KsfCompanion
             this.password = password;
         }
 
-        public bool IsOpen => client != null;
+        /// <summary>The last command didn't get there because the game can't be reached any more (not just busy).</summary>
+        public bool Lost { get; private set; }
 
         /// <summary>Connects and logs in (if not already). What stood in the way, if anything.</summary>
         public async Task<LinkProblem> OpenAsync()
@@ -128,19 +129,28 @@ namespace KsfCompanion
         /// </summary>
         public async Task<string> SendAsync(string command, TimeSpan timeout)
         {
-            if (client == null && await OpenAsync() != LinkProblem.None) return null;
+            if (client == null && await OpenAsync() != LinkProblem.None)
+            {
+                Lost = true;
+                return null;
+            }
             try
             {
-                return await client.ExecuteAsync(command, timeout, CancellationToken.None);
+                var output = await client.ExecuteAsync(command, timeout, CancellationToken.None);
+                Lost = false;
+                return output;
             }
             catch (OperationCanceledException)
             {
-                // Busy (loading a map): the command still runs once the game gets to it.
+                // Busy (loading a map): the command still runs once the game gets to it. The next one goes over a new
+                // connection, so a half-read answer can't get mixed into it.
+                Close();
                 return null;
             }
             catch (Exception ex) when (ex is SocketException || ex is IOException || ex is ObjectDisposedException || ex is InvalidDataException)
             {
                 Program.Trace("game link lost: " + ex.Message);
+                Lost = true;
                 Close();
                 return null;
             }

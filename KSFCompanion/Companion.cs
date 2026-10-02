@@ -643,6 +643,7 @@ namespace KsfCompanion
             Program.Trace("game link: ready" + (seen.Task.IsCompleted ? "" : " (the echo didn't come back)"));
             link = LinkState.Ready;
             linkProblem = LinkProblem.None;
+            linkAttempts = 0;
             UpdateStatus();
             // Makes the keys work right away, even in a game started before KSF Companion was installed.
             await PushAsync("exec ksf_companion");
@@ -2195,7 +2196,7 @@ namespace KsfCompanion
             if (output == null)
             {
                 // The connection was lost (not just a game busy loading): open it again in a moment.
-                if (link == LinkState.Ready && gameLink?.IsOpen == false)
+                if (link == LinkState.Ready && gameLink?.Lost == true)
                 {
                     link = LinkState.Waiting;
                     nextLinkTest = DateTime.Now.AddSeconds(3);

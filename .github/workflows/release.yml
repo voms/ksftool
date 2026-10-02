@@ -1,5 +1,5 @@
-# Push a tag like v3.2.0 (or run it by hand from the Actions tab) and this builds KSFCompanion.exe and puts it
-# on a GitHub release - the file people download and double-click.
+# Push a tag like v3.2.1 (or run it by hand from the Actions tab) and this builds ksf-companion-linux-x64.tar.gz and
+# puts it on a GitHub release - the download for people who don't use Nix. (.NET comes inside it.)
 name: Release
 
 on:
@@ -10,30 +10,46 @@ on:
 permissions:
   contents: write
 
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+  AVALONIA_TELEMETRY_OPTOUT: 1
+
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Self-tests
-        shell: pwsh
         run: |
-          dotnet build KSFCompanion/KSFCompanion.csproj -c Release -nologo
-          $exe = "KSFCompanion/bin/Release/net48/KSFCompanion.exe"
-          $env:KSFC_DATA_DIR = "$env:RUNNER_TEMP/ksfc-test"
-          foreach ($test in "--clock-test", "--binds-test") {
-            $p = Start-Process $exe -ArgumentList $test -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:RUNNER_TEMP/out.txt"
-            Get-Content "$env:RUNNER_TEMP/out.txt"
-            if ($p.ExitCode -ne 0) { throw "$test failed" }
-          }
+          dotnet build KSFCompanion/KSFCompanion.csproj -c Release
+          export KSFC_DATA_DIR="$RUNNER_TEMP/ksfc-test"
+          for test in --clock-test --binds-test --selftest; do
+            KSFCompanion/bin/Release/net10.0/ksf-companion "$test"
+          done
+
+      - name: Package
+        run: |
+          dotnet publish KSFCompanion/KSFCompanion.csproj -c Release -r linux-x64 --self-contained -o out/ksf-companion
+          cp packaging/install.sh LICENSE KSFCompanion/README.txt out/ksf-companion/
+          cp KSFCompanion/Ui/Assets/icon-256.png out/ksf-companion/icon.png
+          tar -czf ksf-companion-linux-x64.tar.gz -C out ksf-companion
 
       - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: KSFCompanion/bin/Release/net48/KSFCompanion.exe
+          files: ksf-companion-linux-x64.tar.gz
           generate_release_notes: true
+
+      - name: Keep the build (run by hand)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ksf-companion-linux-x64
+          path: ksf-companion-linux-x64.tar.gz

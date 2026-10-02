@@ -1,7 +1,9 @@
 KSF Companion
 =============
 A black KSF dashboard for your second monitor, plus KSF map info and a play-later list inside
-Counter-Strike: Source. It runs in the system tray (orange icon near the clock).
+Counter-Strike: Source. It runs in the system tray (the orange icon).
+For Linux: it sends the game its console commands over the game's remote console, so add -usercon
+to CS:S's launch options in Steam (the dashboard reminds you until it's there).
 
 The dashboard
   Simple / Advanced (top right): Simple shows the essentials bigger and cleaner - the numbers
@@ -48,7 +50,7 @@ The dashboard
     (a new best says "new best" until ksf.surf has it and your new rank - ksf.surf itself can
     take a while to catch up), and a message says how it compares to your best.
     How: the timer only shows that text on screen, never in the console, so on KSF servers KSF
-    Companion has the game record a demo (its own "record" command) to cstrike\ksfc_live.dem and
+    Companion has the game record a demo (its own "record" command) to cstrike/ksfc_live.dem and
     reads the timer text from that file as it grows. It's replaced every map and deleted when the
     game closes. Nothing touches the game's memory. If KSF Companion is restarted mid-map, it
     picks up the demo the game is still recording, and if that demo ever stops growing it's
@@ -88,7 +90,7 @@ The Binds tab (top of the window)
   - Click a key button, then press the key - or a mouse button (not the left one) or turn the wheel.
     Esc cancels. Search finds an action by its name, its command or the key it's on.
   - A key you take over gets back what it did before when you take the bind off (shown on the row
-    as "replaces ..."). They're written to cfg\ksf_binds.cfg and loaded straight away while the
+    as "replaces ..."). They're written to cfg/ksf_binds.cfg and loaded straight away while the
     game runs. KSF Companion's own keys (F5/F6/F7) can be moved here too.
 
 The Nominate tab (top of the window)
@@ -126,20 +128,27 @@ In the game
   hold F7     open the console with your play-later list
   KSF Companion never types in chat, and on its own it only runs console commands that answer in
   your console ("status" to see which server you're on, "mp_timelimit" for the map's time limit,
-  and the demo it reads the timer from).
+  and the demo it reads the timer from). It sends them over the game's remote console (CS:S needs
+  -usercon in its launch options for that), on port 27015 of this PC with a password it makes up
+  (rcon_port and rcon_password in settings.ini).
   Tray icon > "Run !m and !mrank on map load" makes it ask KSF for the map info and your rank each
   map - KSF answers those in chat, so that's off unless you turn it on.
 
 Where things are
-  The app:            %LOCALAPPDATA%\Programs\KSF Companion (Start menu and desktop: KSF Companion)
-  Documents\KSF Companion:
-    play-later.txt    your saved maps - you can edit it in Notepad
-    settings.ini      keys, binds, tick (auto/66/100), style, ...
-  Updating: download the new KSFCompanion.exe and double-click it - your settings stay.
-  Removing: Windows Settings > Apps > KSF Companion > Uninstall (also takes it out of CS:S).
+  ~/.config/ksf-companion:
+    play-later.txt    your saved maps - you can edit it in any text editor
+    settings.ini      keys, binds, tick (auto/66/100), style, game_dir, rcon_port, ...
+    errors.log        anything that went wrong
+  ~/.cache/ksf-companion: what's kept from ksf.surf (map pictures, records, the map list)
+  ksf-companion --status shows what it finds: Steam, CS:S, your account, -usercon, the game.
+  Updating: update it the way you installed it (nix flake update and rebuild, or the new download
+  over the old folder) - your settings stay.
+  Removing: close CS:S, then tray icon > "Remove from CS:S..."; then uninstall it the way you
+  installed it.
 
 Good to know
-  - Keep it running while you play. It starts with Windows, quietly in the tray (tray icon > "Start with Windows" to turn that off).
+  - Keep it running while you play. Tray icon > "Start when I log in" starts it quietly in the tray with
+    your desktop (or set programs.ksf-companion.autostart in your NixOS or Home Manager config).
   - If you press F5 while it isn't running, the map is still saved the next time you open it.
   - F5 used to be the in-game screenshot key. Steam's F12 screenshot still works.
   - It only reads files the game writes (the console log and, on KSF, its own demo recording) and
