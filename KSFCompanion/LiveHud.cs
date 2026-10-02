@@ -48,6 +48,8 @@ namespace KsfCompanion
         }
 
         public string DemoPath => path;
+        /// <summary>The running game (0: none): which demos it is recording is read off its open files.</summary>
+        public int GamePid { get; set; }
         /// <summary>When the demo last grew: the game is recording it.</summary>
         public DateTime LastDataAt { get; private set; }
         /// <summary>
@@ -84,36 +86,35 @@ namespace KsfCompanion
         {
             try
             {
+                var writing = OpenFiles.WrittenBy(GamePid);
                 return new DirectoryInfo(folder).GetFiles(DemoName + "*.dem")
                     .OrderByDescending(f => f.LastWriteTime)
-                    .FirstOrDefault(f => IsBeingWritten(f.FullName))?.FullName;
+                    .FirstOrDefault(f => IsBeingWritten(f, writing))?.FullName;
             }
             catch (IOException) { return null; }
             catch (UnauthorizedAccessException) { return null; }
         }
 
         /// <summary>
-        /// Whether something has the file open for writing: opening it while refusing to share writing fails then.
-        /// (Opened for reading only, and closed straight away.)
+        /// Whether the game has the demo open for writing (from its open files in /proc). If those can't be read, a
+        /// demo that grew in the last half minute counts as one being recorded.
         /// </summary>
-        static bool IsBeingWritten(string file)
-        {
-            try
-            {
-                using (new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read)) return false;
-            }
-            catch (IOException) { return true; }
-            catch (UnauthorizedAccessException) { return false; }
-        }
+        static bool IsBeingWritten(FileInfo file, ISet<string> writing) =>
+            writing != null ? writing.Contains(file.Name) : DateTime.Now - file.LastWriteTime < TimeSpan.FromSeconds(30);
 
-        /// <summary>Removes our finished demos, so the next recording gets the plain name again. The one being recorded is locked and stays.</summary>
+        /// <summary>
+        /// Removes our finished demos, so the next recording gets the plain name again. The one being recorded stays
+        /// (on Linux nothing stops a file from being deleted while the game writes it, so it's left out on purpose).
+        /// </summary>
         public void DeleteFinishedDemos()
         {
             try
             {
-                foreach (var file in Directory.GetFiles(folder, DemoName + "*.dem"))
+                var writing = OpenFiles.WrittenBy(GamePid);
+                foreach (var file in new DirectoryInfo(folder).GetFiles(DemoName + "*.dem"))
                 {
-                    try { File.Delete(file); }
+                    if (IsBeingWritten(file, writing)) continue;
+                    try { file.Delete(); }
                     catch (IOException) { }
                     catch (UnauthorizedAccessException) { }
                 }

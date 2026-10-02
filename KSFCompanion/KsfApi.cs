@@ -8,7 +8,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using System.Web.Script.Serialization;
+using System.Text.Json;
 
 namespace KsfCompanion
 {
@@ -199,10 +199,8 @@ namespace KsfCompanion
 
         public KsfApi()
         {
-            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
-            // .NET Framework allows only 2 connections per site by default: map pictures downloading at the same
-            // time would make every data request wait behind them (and time out).
-            if (ServicePointManager.DefaultConnectionLimit < 8) ServicePointManager.DefaultConnectionLimit = 8;
+            // Map pictures downloading at the same time never make the data requests wait behind them: .NET opens as
+            // many connections to ksf.surf as it needs.
             http = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("KSFCompanion/1.0");
             http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
@@ -716,9 +714,52 @@ namespace KsfCompanion
         }
     }
 
+    /// <summary>
+    /// ksf.surf's JSON as plain objects: objects are Dictionary&lt;string, object&gt;, arrays object[], numbers int, long
+    /// or double, and true/false/null as they are.
+    /// </summary>
     static class Json
     {
-        public static object Parse(string text) => new JavaScriptSerializer { MaxJsonLength = int.MaxValue }.DeserializeObject(text);
+        static readonly JsonDocumentOptions Options = new JsonDocumentOptions { AllowTrailingCommas = true, MaxDepth = 256 };
+
+        /// <summary>Reading something that isn't JSON (an error page, say) throws ArgumentException, like a failed request.</summary>
+        public static object Parse(string text)
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(text, Options);
+                return Value(document.RootElement);
+            }
+            catch (JsonException ex)
+            {
+                throw new ArgumentException("ksf.surf sent something that isn't JSON: " + ex.Message, ex);
+            }
+        }
+
+        static object Value(JsonElement element)
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    var obj = new Dictionary<string, object>();
+                    foreach (var property in element.EnumerateObject()) obj[property.Name] = Value(property.Value);
+                    return obj;
+                case JsonValueKind.Array:
+                    return element.EnumerateArray().Select(Value).ToArray();
+                case JsonValueKind.String:
+                    return element.GetString();
+                case JsonValueKind.Number:
+                    if (element.TryGetInt32(out var i)) return i;
+                    if (element.TryGetInt64(out var l)) return l;
+                    return element.TryGetDouble(out var d) ? d : (object)null;
+                case JsonValueKind.True:
+                    return true;
+                case JsonValueKind.False:
+                    return false;
+                default:
+                    return null;
+            }
+        }
 
         public static IEnumerable<Dictionary<string, object>> Objects(object value) =>
             (value as object[])?.OfType<Dictionary<string, object>>() ?? Enumerable.Empty<Dictionary<string, object>>();

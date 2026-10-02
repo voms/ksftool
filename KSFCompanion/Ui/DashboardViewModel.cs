@@ -6,7 +6,9 @@ using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
-using System.Windows.Media;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Media.Immutable;
 
 namespace KsfCompanion.Ui
 {
@@ -41,15 +43,15 @@ namespace KsfCompanion.Ui
     /// <summary>A map on the nominate page, as a list row or a tile.</summary>
     sealed class MapResultRow : Observable
     {
-        ImageSource thumb;
+        Bitmap thumb;
         bool isSaved, isDone;
         string doneText = "", doneTip;
 
         public string Map { get; set; }
         public int Tier { get; set; }
         public string TierText { get; set; }
-        public Brush TierBrush { get; set; }
-        public Brush TierSoftBrush { get; set; }
+        public IBrush TierBrush { get; set; }
+        public IBrush TierSoftBrush { get; set; }
         /// <summary>"4 stages  ·  7 bonuses"</summary>
         public string Details { get; set; }
         public string Rating { get; set; }
@@ -57,9 +59,20 @@ namespace KsfCompanion.Ui
         public string Mappers { get; set; }
         /// <summary>The map you're playing right now.</summary>
         public bool IsCurrent { get; set; }
-        public ImageSource Thumb { get => thumb; set => Set(ref thumb, value); }
+        public Bitmap Thumb { get => thumb; set => Set(ref thumb, value); }
         /// <summary>In your play-later list.</summary>
-        public bool IsSaved { get => isSaved; set => Set(ref isSaved, value); }
+        public bool IsSaved
+        {
+            get => isSaved;
+            set
+            {
+                if (!Set(ref isSaved, value)) return;
+                Raise(nameof(SaveText));
+                Raise(nameof(SaveTip));
+            }
+        }
+        public string SaveText => isSaved ? "Saved" : "Save";
+        public string SaveTip => isSaved ? "In your play-later list (click to take it off)" : "Save it to your play-later list";
         /// <summary>You've finished it (on the tick and style on show).</summary>
         public bool IsDone { get => isDone; set => Set(ref isDone, value); }
         /// <summary>Your time on it: "1:02.144".</summary>
@@ -100,7 +113,7 @@ namespace KsfCompanion.Ui
     sealed class LeaderRow
     {
         public string Rank { get; set; }
-        public Brush RankBrush { get; set; }
+        public IBrush RankBrush { get; set; }
         public string Name { get; set; }
         public string Time { get; set; }
         public string Gap { get; set; }
@@ -116,7 +129,7 @@ namespace KsfCompanion.Ui
     {
         bool isCurrent, isFresh, done, isWorst, isNew;
         string time, gap, rank, rankTotal, tip;
-        Brush gapBrush, rankBrush;
+        IBrush gapBrush, rankBrush;
         double closeness;
 
         public int Zone { get; set; }
@@ -125,12 +138,12 @@ namespace KsfCompanion.Ui
         public string Time { get => time; set => Set(ref time, value); }
         public bool Done { get => done; set => Set(ref done, value); }
         public string Gap { get => gap; set => Set(ref gap, value); }
-        public Brush GapBrush { get => gapBrush; set => Set(ref gapBrush, value); }
+        public IBrush GapBrush { get => gapBrush; set => Set(ref gapBrush, value); }
         /// <summary>"#4,570": your place on this leaderboard.</summary>
         public string Rank { get => rank; set => Set(ref rank, value); }
         /// <summary>"/ 31,958": how many are on it.</summary>
         public string RankTotal { get => rankTotal; set => Set(ref rankTotal, value); }
-        public Brush RankBrush { get => rankBrush; set => Set(ref rankBrush, value); }
+        public IBrush RankBrush { get => rankBrush; set => Set(ref rankBrush, value); }
         /// <summary>How close your time is to the record, 0..1 (1 = the record; empty at twice its time). Drives the bar.</summary>
         public double Closeness { get => closeness; set => Set(ref closeness, value); }
         /// <summary>The stage you lose the most time on.</summary>
@@ -146,20 +159,20 @@ namespace KsfCompanion.Ui
 
     sealed class LaterRow : Observable
     {
-        ImageSource thumb;
+        Bitmap thumb;
         string saved;
 
         public string Map { get; set; }
         public string Tier { get; set; }
-        public Brush TierBrush { get; set; }
-        public Brush TierSoftBrush { get; set; }
+        public IBrush TierBrush { get; set; }
+        public IBrush TierSoftBrush { get; set; }
         public DateTime SavedAt { get; set; }
         public string Saved { get => saved; set => Set(ref saved, value); }
         public bool IsCurrent { get; set; }
         public bool IsLive { get; set; }
         public string Live { get; set; }
         public string JoinAddress { get; set; }
-        public ImageSource Thumb { get => thumb; set => Set(ref thumb, value); }
+        public Bitmap Thumb { get => thumb; set => Set(ref thumb, value); }
 
         public void Update() => Saved = SavedAt > DateTime.MinValue ? "saved " + DashboardViewModel.Ago(SavedAt) : "";
     }
@@ -172,8 +185,8 @@ namespace KsfCompanion.Ui
         public string Name { get; set; }
         public string Map { get; set; }
         public string Tier { get; set; }
-        public Brush TierBrush { get; set; }
-        public Brush TierSoftBrush { get; set; }
+        public IBrush TierBrush { get; set; }
+        public IBrush TierSoftBrush { get; set; }
         public string Players { get; set; }
         public string Address { get; set; }
         public bool IsYours { get; set; }
@@ -193,8 +206,8 @@ namespace KsfCompanion.Ui
         public string Name { get; set; }
         public string Zone { get; set; }
         public bool HasZone => !string.IsNullOrEmpty(Zone);
-        public Brush ZoneBrush { get; set; }
-        public Brush ZoneSoftBrush { get; set; }
+        public IBrush ZoneBrush { get; set; }
+        public IBrush ZoneSoftBrush { get; set; }
         public string Rank { get; set; }
         public bool IsYou { get; set; }
         public int ConnectedAtFetch { get; set; }
@@ -207,8 +220,8 @@ namespace KsfCompanion.Ui
     sealed class RecentRow
     {
         public string Kind { get; set; }
-        public Brush KindBrush { get; set; }
-        public Brush KindSoftBrush { get; set; }
+        public IBrush KindBrush { get; set; }
+        public IBrush KindSoftBrush { get; set; }
         public string Map { get; set; }
         public string Time { get; set; }
         public string Detail { get; set; }
@@ -218,22 +231,22 @@ namespace KsfCompanion.Ui
     sealed class DashboardViewModel : Observable
     {
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
-        static readonly Brush Gold = Frozen("#F5C542"), Silver = Frozen("#C9CED6"), Bronze = Frozen("#D08A55"), Plain = Frozen("#6F6F7C");
-        static readonly Brush GoodBrush = Frozen("#3DDC97"), WaitBrush = Frozen("#6F6F7C"), WarnBrush = Frozen("#F5B83D");
+        static readonly IBrush Gold = Frozen("#F5C542"), Silver = Frozen("#C9CED6"), Bronze = Frozen("#D08A55"), Plain = Frozen("#6F6F7C");
+        static readonly IBrush GoodBrush = Frozen("#3DDC97"), WaitBrush = Frozen("#6F6F7C"), WarnBrush = Frozen("#F5B83D");
         static readonly string[] TierColors = { "#8A8A96", "#34D399", "#A3E635", "#FACC15", "#FB923C", "#F87171", "#F472B6", "#C084FC", "#818CF8" };
 
         // header
         const string DefaultEmptyText = "Join a surf map in CS:S and everything about it shows up here.";
         string playerName = "", playerDetail = "", statusText = "Starting...";
-        ImageSource avatar;
-        Brush statusBrush = WaitBrush;
+        Bitmap avatar;
+        IBrush statusBrush = WaitBrush;
 
         // hero
         bool hasMap, isOnKsf, loading, isSaved, hasRating, hasServerLine, is100t;
         string mapName = "No map yet", mapBadge = "WAITING FOR A MAP", tierText, typeText, bonusText, mapperText, ratingText, serverLine,
             emptyText = DefaultEmptyText;
-        Brush tierBrush = Plain, tierSoftBrush = Plain;
-        ImageSource mapImage;
+        IBrush tierBrush = Plain, tierSoftBrush = Plain;
+        Bitmap mapImage;
 
         // tiles
         bool hasWr, hasPb;
@@ -253,7 +266,7 @@ namespace KsfCompanion.Ui
 
         // ----- your times: the map, every stage and every bonus - time, gap to the record, place on the leaderboard.
         // Stages and bonuses are split in two halves: left and right column, or one below the other when narrow.
-        static readonly Brush GapBrushNormal = Frozen("#B3B3BE"), GapBrushWorst = Frozen("#FF8A5C"), NotDoneBrush = Frozen("#6F6F7C"),
+        static readonly IBrush GapBrushNormal = Frozen("#B3B3BE"), GapBrushWorst = Frozen("#FF8A5C"), NotDoneBrush = Frozen("#6F6F7C"),
             RankBrushNormal = Frozen("#B3B3BE"), NewBrush = Frozen("#FF9A45");
         bool hasTimes, hasStages, hasBonuses;
         string stagesSummary = "", bonusesSummary = "", timesKey;
@@ -426,13 +439,13 @@ namespace KsfCompanion.Ui
         }
 
         // ----- live: your server, the session, the next map, PB celebrations -----
-        static readonly Brush StartBrush = Frozen("#9A9AA6"), StartSoftBrush = Frozen("#229A9AA6");
-        static readonly Brush ZoneBrush = Frozen("#FF9A45"), ZoneSoftBrush = Frozen("#26FF7A1A");
-        static readonly Brush BonusBrush = Frozen("#C084FC"), BonusSoftBrush = Frozen("#26C084FC");
+        static readonly IBrush StartBrush = Frozen("#9A9AA6"), StartSoftBrush = Frozen("#229A9AA6");
+        static readonly IBrush ZoneBrush = Frozen("#FF9A45"), ZoneSoftBrush = Frozen("#26FF7A1A");
+        static readonly IBrush BonusBrush = Frozen("#C084FC"), BonusSoftBrush = Frozen("#26C084FC");
 
-        static readonly Brush TimeBrush = Frozen("#F4F4F6"), TimeSoonBrush = Frozen("#FF8A3D"), TimeUpBrush = Frozen("#FF5C5C");
+        static readonly IBrush TimeBrush = Frozen("#F4F4F6"), TimeSoonBrush = Frozen("#FF8A3D"), TimeUpBrush = Frozen("#FF5C5C");
         string heroTimeBig = "", heroTimeLabel = "TIME LEFT", extendInfo = "";
-        Brush heroTimeBrush = TimeBrush;
+        IBrush heroTimeBrush = TimeBrush;
         bool hasExtendInfo;
         KsfServer liveServer;
         bool hasLiveServer, hasLiveTime, hasHeroTime, hasNextMap, hasSession;
@@ -442,7 +455,7 @@ namespace KsfCompanion.Ui
         int celebrationId;
         DateTime? sessionStart;
         DateTime lastRelativeUpdate = DateTime.MinValue;
-        ImageSource ambientImage;
+        Bitmap ambientImage;
 
         public bool HasLiveServer { get => hasLiveServer; set => Set(ref hasLiveServer, value); }
         public string LiveTitle { get => liveTitle; set => Set(ref liveTitle, value); }
@@ -456,7 +469,7 @@ namespace KsfCompanion.Ui
         public string HeroTimeBig { get => heroTimeBig; set => Set(ref heroTimeBig, value); }
         public string HeroTimeLabel { get => heroTimeLabel; set => Set(ref heroTimeLabel, value); }
         /// <summary>Orange in the last two minutes, red in the last 30 seconds.</summary>
-        public Brush HeroTimeBrush
+        public IBrush HeroTimeBrush
         {
             get => heroTimeBrush;
             set
@@ -466,8 +479,8 @@ namespace KsfCompanion.Ui
             }
         }
         /// <summary>The timer's dot and line: the accent while there's time, orange then red near the end.</summary>
-        public Brush HeroAccentBrush => heroTimeBrush == TimeBrush ? HeroAccent : heroTimeBrush;
-        static readonly Brush HeroAccent = Frozen("#FF7A1A");
+        public IBrush HeroAccentBrush => heroTimeBrush == TimeBrush ? HeroAccent : heroTimeBrush;
+        static readonly IBrush HeroAccent = Frozen("#FF7A1A");
         /// <summary>"80 min limit  ·  extended 2× (+20 min)"</summary>
         public string ExtendInfo { get => extendInfo; set => Set(ref extendInfo, value); }
         public bool HasExtendInfo { get => hasExtendInfo; set => Set(ref hasExtendInfo, value); }
@@ -488,7 +501,7 @@ namespace KsfCompanion.Ui
         /// <summary>Goes up by one each time there's something to celebrate; the window plays its animation on change.</summary>
         public int CelebrationId { get => celebrationId; set => Set(ref celebrationId, value); }
         /// <summary>A tiny version of the map picture, stretched and faded behind the whole dashboard.</summary>
-        public ImageSource AmbientImage { get => ambientImage; set => Set(ref ambientImage, value); }
+        public Bitmap AmbientImage { get => ambientImage; set => Set(ref ambientImage, value); }
 
         /// <summary>Everyone on your KSF server and where they are on the map (KSF's own labels: start, cp/stage N, bonus N).</summary>
         public void SetLiveServer(KsfServer server, string yourSteamId, string heroMap)
@@ -670,7 +683,7 @@ namespace KsfCompanion.Ui
         public bool HasPlayer => !string.IsNullOrEmpty(playerName);
         public string PlayerLabel => HasPlayer ? playerName : "Not connected yet";
 
-        string notice;
+        string notice, noticeAction;
         /// <summary>Something that needs you to act, e.g. restarting the game once after setup. Null when all is well.</summary>
         public string Notice
         {
@@ -678,10 +691,24 @@ namespace KsfCompanion.Ui
             set { if (Set(ref notice, value)) Raise(nameof(HasNotice)); }
         }
         public bool HasNotice => !string.IsNullOrEmpty(notice);
+        /// <summary>The notice's button ("Copy -usercon"), if it has one: NoticeActionCommand does it.</summary>
+        public string NoticeAction
+        {
+            get => noticeAction;
+            set { if (Set(ref noticeAction, value)) Raise(nameof(HasNoticeAction)); }
+        }
+        public bool HasNoticeAction => !string.IsNullOrEmpty(noticeAction);
+        public ICommand NoticeActionCommand { get; set; }
+
+        public void SetNotice(string text, string action)
+        {
+            Notice = text;
+            NoticeAction = text == null ? null : action;
+        }
         public string PlayerDetail { get => playerDetail; set => Set(ref playerDetail, value); }
-        public ImageSource Avatar { get => avatar; set => Set(ref avatar, value); }
+        public Bitmap Avatar { get => avatar; set => Set(ref avatar, value); }
         public string StatusText { get => statusText; set => Set(ref statusText, value); }
-        public Brush StatusBrush { get => statusBrush; set => Set(ref statusBrush, value); }
+        public IBrush StatusBrush { get => statusBrush; set => Set(ref statusBrush, value); }
 
         public bool HasMap { get => hasMap; set => Set(ref hasMap, value); }
         /// <summary>Which KSF records the map section shows: 100 tick (true) or 66 tick.</summary>
@@ -696,10 +723,10 @@ namespace KsfCompanion.Ui
         public string SaveLabel => isSaved ? "Saved for later" : "Save for later";
         public string MapName { get => mapName; set => Set(ref mapName, value); }
         public string MapBadge { get => mapBadge; set => Set(ref mapBadge, value); }
-        public ImageSource MapImage { get => mapImage; set => Set(ref mapImage, value); }
+        public Bitmap MapImage { get => mapImage; set => Set(ref mapImage, value); }
         public string TierText { get => tierText; set => Set(ref tierText, value); }
-        public Brush TierBrush { get => tierBrush; set => Set(ref tierBrush, value); }
-        public Brush TierSoftBrush { get => tierSoftBrush; set => Set(ref tierSoftBrush, value); }
+        public IBrush TierBrush { get => tierBrush; set => Set(ref tierBrush, value); }
+        public IBrush TierSoftBrush { get => tierSoftBrush; set => Set(ref tierSoftBrush, value); }
         public string TypeText { get => typeText; set => Set(ref typeText, value); }
         public string BonusText { get => bonusText; set => Set(ref bonusText, value); }
         public string MapperText { get => mapperText; set => Set(ref mapperText, value); }
@@ -916,7 +943,7 @@ namespace KsfCompanion.Ui
         IReadOnlyDictionary<string, FinishedMap> finishedMaps = new Dictionary<string, FinishedMap>();
         string playingMap;
         // Pictures already loaded, so searching and filtering don't load them again (the oldest go first).
-        readonly Dictionary<string, ImageSource> mapThumbs = new Dictionary<string, ImageSource>(StringComparer.OrdinalIgnoreCase);
+        readonly Dictionary<string, Bitmap> mapThumbs = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
         readonly Queue<string> mapThumbOrder = new Queue<string>();
 
         public DashboardViewModel()
@@ -1117,7 +1144,7 @@ namespace KsfCompanion.Ui
             UpdateMapStatus();
         }
 
-        public void SetMapThumb(MapResultRow row, ImageSource thumb)
+        public void SetMapThumb(MapResultRow row, Bitmap thumb)
         {
             if (thumb == null) return;
             if (!mapThumbs.ContainsKey(row.Map))
@@ -1516,9 +1543,9 @@ namespace KsfCompanion.Ui
             HasRecent = Recent.Count > 0;
         }
 
-        public static Brush TierColor(int tier) => Frozen(TierColors[Math.Max(0, Math.Min(TierColors.Length - 1, tier))]);
+        public static IBrush TierColor(int tier) => Frozen(TierColors[Math.Max(0, Math.Min(TierColors.Length - 1, tier))]);
 
-        static Brush TierSoft(int tier) => Frozen("#24" + TierColors[Math.Max(0, Math.Min(TierColors.Length - 1, tier))].Substring(1));
+        static IBrush TierSoft(int tier) => Frozen("#24" + TierColors[Math.Max(0, Math.Min(TierColors.Length - 1, tier))].Substring(1));
 
         static string TopPercent(int rank, int total)
         {
@@ -1536,11 +1563,6 @@ namespace KsfCompanion.Ui
             return when.ToString("MMM d", Inv);
         }
 
-        static Brush Frozen(string hex)
-        {
-            var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
-            brush.Freeze();
-            return brush;
-        }
+        static IBrush Frozen(string hex) => new ImmutableSolidColorBrush(Color.Parse(hex));
     }
 }

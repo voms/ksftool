@@ -5,14 +5,14 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using Avalonia.Media.Imaging;
+using SkiaSharp;
 
 namespace KsfCompanion.Ui
 {
     /// <summary>
     /// Downloads map previews (from ksf.surf) and avatars once, shrinks them and keeps them in
-    /// %LOCALAPPDATA%\KSF Companion\images so the dashboard stays quick.
+    /// ~/.cache/ksf-companion/images so the dashboard stays quick.
     /// </summary>
     sealed class ImageCache
     {
@@ -31,33 +31,46 @@ namespace KsfCompanion.Ui
             Directory.CreateDirectory(dir);
         }
 
-        public Task<BitmapSource> MapAsync(string map, int width, bool urgent = false) => LoadAsync("map_" + map.ToLowerInvariant(), KsfApi.MapImage(map), width, urgent);
+        public Task<Bitmap> MapAsync(string map, int width, bool urgent = false) => LoadAsync("map_" + map.ToLowerInvariant(), KsfApi.MapImage(map), width, urgent);
 
-        public Task<BitmapSource> AvatarAsync(string url) => LoadAsync("avatar_" + Hash(url), url, 96);
+        public Task<Bitmap> AvatarAsync(string url) => LoadAsync("avatar_" + Hash(url), url, 96);
 
         /// <summary>The map picture shrunk to a few dozen pixels and blurred: a soft wash of its colours for behind the dashboard.</summary>
-        public async Task<BitmapSource> AmbientAsync(string map)
+        public async Task<Bitmap> AmbientAsync(string map)
         {
-            var small = await MapAsync(map, 40, urgent: true).ConfigureAwait(false);
-            return small == null ? null : await Task.Run(() => Blur(small)).ConfigureAwait(false);
+            // Downloaded (or already there) like the other sizes; the blur is made from the file.
+            if (await MapAsync(map, 40, urgent: true).ConfigureAwait(false) == null) return null;
+            return await Task.Run(() => Blur(Path.Combine(dir, "map_" + map.ToLowerInvariant() + ".jpg"))).ConfigureAwait(false);
         }
 
-        static BitmapSource Blur(BitmapSource source)
+        static Bitmap Blur(string file)
         {
-            var bgra = new FormatConvertedBitmap(source, PixelFormats.Bgra32, null, 0);
-            int width = bgra.PixelWidth, height = bgra.PixelHeight, stride = width * 4;
-            var pixels = new byte[height * stride];
-            bgra.CopyPixels(pixels, stride, 0);
-            var temp = new byte[pixels.Length];
-            // Three box blurs in a row come out close to a gaussian.
-            for (var pass = 0; pass < 3; pass++)
+            try
             {
-                BoxBlur(pixels, temp, width, height, 3, 1, 0);
-                BoxBlur(temp, pixels, width, height, 3, 0, 1);
+                using var original = SKBitmap.Decode(file);
+                if (original == null) return null;
+                var height = Math.Max(1, (int)Math.Round(original.Height * 40.0 / original.Width));
+                using var small = original.Resize(new SKImageInfo(40, height, SKColorType.Bgra8888, SKAlphaType.Premul), SKFilterQuality.High);
+                if (small == null) return null;
+                int width = small.Width;
+                var pixels = small.Bytes;
+                var temp = new byte[pixels.Length];
+                // Three box blurs in a row come out close to a gaussian.
+                for (var pass = 0; pass < 3; pass++)
+                {
+                    BoxBlur(pixels, temp, width, small.Height, 3, 1, 0);
+                    BoxBlur(temp, pixels, width, small.Height, 3, 0, 1);
+                }
+                using var blurred = new SKBitmap(small.Info);
+                System.Runtime.InteropServices.Marshal.Copy(pixels, 0, blurred.GetPixels(), pixels.Length);
+                using var png = blurred.Encode(SKEncodedImageFormat.Png, 100);
+                using var stream = new MemoryStream(png.ToArray());
+                return new Bitmap(stream);
             }
-            var result = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, pixels, stride);
-            result.Freeze();
-            return result;
+            catch (Exception ex) when (ex is IOException || ex is ArgumentException || ex is InvalidOperationException)
+            {
+                return null;
+            }
         }
 
         static void BoxBlur(byte[] source, byte[] target, int width, int height, int radius, int dx, int dy)
@@ -78,7 +91,7 @@ namespace KsfCompanion.Ui
             }
         }
 
-        async Task<BitmapSource> LoadAsync(string key, string url, int width, bool urgent = false)
+        async Task<Bitmap> LoadAsync(string key, string url, int width, bool urgent = false)
         {
             var file = Path.Combine(dir, key + ".jpg");
             var missing = file + ".missing";
@@ -128,37 +141,24 @@ namespace KsfCompanion.Ui
 
         static void Store(byte[] bytes, string file)
         {
-            BitmapSource image;
-            using (var stream = new MemoryStream(bytes))
-            {
-                var frame = BitmapDecoder.Create(stream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad).Frames[0];
-                image = frame.PixelWidth > StoredWidth
-                    ? new TransformedBitmap(frame, new System.Windows.Media.ScaleTransform(StoredWidth / (double)frame.PixelWidth, StoredWidth / (double)frame.PixelWidth))
-                    : (BitmapSource)frame;
-            }
-            var encoder = new JpegBitmapEncoder { QualityLevel = 88 };
-            encoder.Frames.Add(BitmapFrame.Create(image));
+            using var frame = SKBitmap.Decode(bytes) ?? throw new NotSupportedException("not a picture");
+            using var image = frame.Width > StoredWidth
+                ? frame.Resize(new SKImageInfo(StoredWidth, Math.Max(1, (int)Math.Round(frame.Height * (double)StoredWidth / frame.Width))), SKFilterQuality.High)
+                : frame.Copy();
+            using var jpeg = image.Encode(SKEncodedImageFormat.Jpeg, 88) ?? throw new NotSupportedException("couldn't save the picture");
             var temp = file + ".tmp";
-            using (var output = File.Create(temp)) encoder.Save(output);
-            if (File.Exists(file)) File.Delete(file);
-            File.Move(temp, file);
+            using (var output = File.Create(temp)) jpeg.SaveTo(output);
+            File.Move(temp, file, overwrite: true);
         }
 
-        static BitmapSource Decode(string file, int width)
+        static Bitmap Decode(string file, int width)
         {
             try
             {
-                var image = new BitmapImage();
-                image.BeginInit();
-                image.CacheOption = BitmapCacheOption.OnLoad;
-                image.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
-                image.DecodePixelWidth = width;
-                image.UriSource = new Uri(file);
-                image.EndInit();
-                image.Freeze();
-                return image;
+                using var stream = File.OpenRead(file);
+                return Bitmap.DecodeToWidth(stream, width, BitmapInterpolationMode.HighQuality);
             }
-            catch (Exception ex) when (ex is IOException || ex is NotSupportedException || ex is FileFormatException)
+            catch (Exception ex) when (ex is IOException || ex is NotSupportedException || ex is ArgumentException || ex is InvalidOperationException)
             {
                 try { File.Delete(file); } catch (IOException) { }
                 return null;

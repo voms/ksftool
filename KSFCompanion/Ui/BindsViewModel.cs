@@ -29,10 +29,15 @@ namespace KsfCompanion.Ui
                 if (!Set(ref key, value)) return;
                 Raise(nameof(KeyLabel));
                 Raise(nameof(HasKey));
+                Raise(nameof(ShowClear));
             }
         }
         public string KeyLabel => IsCapturing ? "Press a key..." : key != null ? GameKeys.Label(key) : InGame.Count > 0 ? "Add key" : "Set key";
         public bool HasKey => key != null;
+        /// <summary>The x that takes the key off: on a row with a key of KSF Companion's (not its own keys, not your own commands).</summary>
+        public bool ShowClear => HasKey && CanClear && !IsOwn;
+        /// <summary>The bin that removes one of your own commands (once no key of your game's does it).</summary>
+        public bool ShowRemove => IsOwn && !HasInGame;
 
         /// <summary>Keys bound to this in your game already (bind "r" "sm_restart" in config.cfg), not by KSF Companion.</summary>
         public ObservableCollection<GameKeyChip> InGame { get; } = new ObservableCollection<GameKeyChip>();
@@ -45,6 +50,7 @@ namespace KsfCompanion.Ui
             InGame.Clear();
             foreach (var k in list) InGame.Add(new GameKeyChip { Key = k, Row = this });
             Raise(nameof(HasInGame));
+            Raise(nameof(ShowRemove));
             Raise(nameof(KeyLabel));
         }
 

@@ -1,36 +1,34 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <!-- .NET Framework 4.8 ships with Windows 10/11, so the exe runs without installing anything. -->
-    <TargetFramework>net48</TargetFramework>
-    <UseWPF>true</UseWPF>
-    <UseWindowsForms>true</UseWindowsForms>
+    <TargetFramework>net10.0</TargetFramework>
     <LangVersion>latest</LangVersion>
-    <AssemblyName>KSFCompanion</AssemblyName>
+    <AssemblyName>ksf-companion</AssemblyName>
     <RootNamespace>KsfCompanion</RootNamespace>
     <Version>3.2.1</Version>
     <Product>KSF Companion</Product>
-    <Description>KSF surf dashboard for your second monitor, plus in-game map info and a play-later list for CS:S.</Description>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
-    <!-- Rendered from Ui\Assets\icon.svg by Ui\Assets\build-icon.ps1 -->
-    <ApplicationIcon>Ui\Assets\app.ico</ApplicationIcon>
-    <AutomaticallyUseReferenceAssemblyPackages>false</AutomaticallyUseReferenceAssemblyPackages>
-    <Prefer32Bit>false</Prefer32Bit>
+    <Description>KSF surf dashboard for your second monitor, plus in-game map info and a play-later list for CS:S - for Linux.</Description>
+    <!-- Numbers and dates are always written the same way (1,234 - Sep 27), and no ICU is needed at run time. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <BuiltInComInteropSupport>false</BuiltInComInteropSupport>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
     <DebugType>embedded</DebugType>
   </PropertyGroup>
 
   <ItemGroup>
-    <Reference Include="System.Net.Http" />
-    <!-- JavaScriptSerializer; System.Web is only here so the XAML compiler can resolve it. -->
-    <Reference Include="System.Web" />
-    <Reference Include="System.Web.Extensions" />
+    <PackageReference Include="Avalonia" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.22" />
+    <!-- Renders the dashboard to a PNG without a display (the preview command, and the UI self-test). -->
+    <PackageReference Include="Avalonia.Headless" Version="11.3.22" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Remove="Ui\Assets\app.ico;Ui\Assets\icon-*.png" />
-    <Resource Include="Ui\Assets\app.ico" />
-    <Resource Include="Ui\Assets\icon-16.png;Ui\Assets\icon-20.png;Ui\Assets\icon-24.png;Ui\Assets\icon-32.png" />
+    <AvaloniaResource Include="Ui\Assets\Fonts\*.ttf" />
+    <AvaloniaResource Include="Ui\Assets\icon-*.png" />
   </ItemGroup>
 
 </Project>

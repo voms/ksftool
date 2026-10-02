@@ -10,6 +10,8 @@ namespace KsfCompanion
     /// <summary>
     /// Everything KSF Companion puts in the game: a small block in autoexec.cfg plus a few ksf_*.cfg files.
     /// The KSF card is a set of "echo" lines that the card key prints into the console and then opens it.
+    /// The block also turns on the game's own remote console (RCON) for this PC, which is how KSF Companion hands the
+    /// game console commands on Linux (CS:S only listens for it when it's started with -usercon).
     /// </summary>
     sealed class GameConfig
     {
@@ -63,19 +65,43 @@ namespace KsfCompanion
             RememberOriginals(settings, new[] { keys.Save, keys.Card, keys.List });
 
             Write("ksf_companion.cfg", CompanionCfg(keys));
-            if (!File.Exists(CfgPath("ksf_binds.cfg"))) Write("ksf_binds.cfg", "// KSF Companion binds - set them on the Binds page of the dashboard\r\n");
+            if (!File.Exists(CfgPath("ksf_binds.cfg"))) Write("ksf_binds.cfg", "// KSF Companion binds - set them on the Binds page of the dashboard\n");
             if (!File.Exists(CfgPath("ksf_card.cfg"))) WriteCard(new[] { "no map yet - join a map and its KSF info shows up here" });
             if (!File.Exists(CfgPath("ksf_msg.cfg"))) WriteMessage(new[] { "KSF Companion is running" });
 
             var rest = RemoveBlock(ReadAutoexec()).TrimEnd();
-            var block = string.Join("\r\n",
+            var block = string.Join("\n",
                 BlockStart,
                 "// Lets KSF Companion follow map changes and adds its keys. Delete this block to turn it off.",
                 $"con_logfile \"{LogFileName}\"",
+                "// KSF Companion sends its console commands (status, mp_timelimit, sm_stage...) over the game's remote console:",
+                "// only when CS:S is started with -usercon, and only with this password. (ip 127.0.0.1 would stop you joining servers.)",
+                "ip 0.0.0.0",
+                $"hostport {RconPort(settings)}",
+                $"rcon_password \"{RconPassword(settings)}\"",
+                "sv_rcon_whitelist_address 127.0.0.1",
+                "net_start",
                 "exec ksf_companion",
                 Echo($"KSF Companion ready - {GameKeys.Label(keys.Save)} saves the map for later, hold {GameKeys.Label(keys.Card)} for the map card, hold {GameKeys.Label(keys.List)} for your play-later list"),
                 BlockEnd);
-            WriteFile(CfgPath("autoexec.cfg"), (rest.Length > 0 ? rest + "\r\n\r\n" : "") + block + "\r\n");
+            WriteFile(CfgPath("autoexec.cfg"), (rest.Length > 0 ? rest + "\n\n" : "") + block + "\n");
+        }
+
+        /// <summary>The port the game's remote console listens on (rcon_port in settings.ini).</summary>
+        public static int RconPort(Settings settings) => settings.GetInt("rcon_port", 1024, 65535);
+
+        /// <summary>
+        /// The game's remote console password: made up once and kept in settings.ini, so a game that is already running
+        /// keeps working when KSF Companion restarts. Letters and digits only, so it's safe in a cfg.
+        /// </summary>
+        public static string RconPassword(Settings settings)
+        {
+            var password = settings.Get("rcon_password");
+            if (Regex.IsMatch(password, "^[A-Za-z0-9]{12,64}$")) return password;
+            const string alphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+            password = new string(System.Security.Cryptography.RandomNumberGenerator.GetItems<char>(alphabet, 24));
+            settings.Set("rcon_password", password);
+            return password;
         }
 
         /// <summary>Removes our cfgs and autoexec block and puts the original key binds back into config.cfg.</summary>
@@ -84,7 +110,7 @@ namespace KsfCompanion
             var rest = RemoveBlock(ReadAutoexec()).TrimEnd();
             var autoexec = CfgPath("autoexec.cfg");
             if (rest.Length == 0) TryDelete(autoexec);
-            else WriteFile(autoexec, rest + "\r\n");
+            else WriteFile(autoexec, rest + "\n");
 
             foreach (var f in OwnFiles) TryDelete(CfgPath(f));
             TryDelete(Path.Combine(CstrikeDir, LogFileName));
@@ -98,9 +124,9 @@ namespace KsfCompanion
         public void WriteMessage(IList<string> lines) => Write("ksf_msg.cfg", EchoBlock(lines, separator: false));
 
         // Only aliases and binds, so KSF Companion can also exec it in a game that is already running.
-        static string CompanionCfg(KeyNames keys) => string.Join("\r\n",
+        static string CompanionCfg(KeyNames keys) => string.Join("\n",
             "// KSF Companion in-game keys. This file is rewritten every time KSF Companion starts;",
-            "// change the keys in Documents\\KSF Companion\\settings.ini instead.",
+            "// change the keys in ~/.config/ksf-companion/settings.ini (or on the Binds page) instead.",
             $"alias ksf_save \"echo {SaveMarker}; play buttons/blip1.wav\"",
             "alias +ksf_card \"exec ksf_card; showconsole\"",
             "alias -ksf_card \"hideconsole; gameui_hide\"",
@@ -140,7 +166,7 @@ namespace KsfCompanion
                 }
             }
             if (list.Any(b => b.Action.IsTurn)) lines.Add($"cl_yawspeed {turnSpeed}");
-            Write("ksf_binds.cfg", string.Join("\r\n", lines) + "\r\n");
+            Write("ksf_binds.cfg", string.Join("\n", lines) + "\n");
         }
 
         static string AliasOf(BindAction action)
@@ -228,9 +254,9 @@ namespace KsfCompanion
 
         static string EchoBlock(IList<string> lines, bool separator)
         {
-            var sb = new StringBuilder("// written by KSF Companion - regenerated automatically\r\n");
-            if (separator) sb.Append(Echo(new string('-', 64))).Append("\r\n");
-            foreach (var line in lines) sb.Append(Echo(line)).Append("\r\n");
+            var sb = new StringBuilder("// written by KSF Companion - regenerated automatically\n");
+            if (separator) sb.Append(Echo(new string('-', 64))).Append('\n');
+            foreach (var line in lines) sb.Append(Echo(line)).Append('\n');
             return sb.ToString();
         }
 

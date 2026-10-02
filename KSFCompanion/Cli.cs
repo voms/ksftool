@@ -5,11 +5,10 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
-using System.Windows.Media.Animation;
-using System.Windows.Media.Imaging;
+using Avalonia;
+using Avalonia.Headless;
+using Avalonia.Media;
+using Avalonia.Threading;
 using KsfCompanion.Ui;
 
 namespace KsfCompanion
@@ -18,20 +17,21 @@ namespace KsfCompanion
     static class Cli
     {
         const string Usage =
-            "KSFCompanion.exe                 run in the tray (normal use)\n" +
-            "KSFCompanion.exe --install       add the cfgs/keys to CS:S\n" +
-            "KSFCompanion.exe --uninstall     remove them again (close CS:S first)\n" +
-            "KSFCompanion.exe --card <map> [66|100]   print the KSF card for a map\n" +
-            "KSFCompanion.exe --parse <log>   show which maps/F5 presses a console log contains\n" +
-            "KSFCompanion.exe --preview <map> <file.png> [width] [height] [66|100]   render the dashboard to an image\n" +
-            "                 (map \"live\" = the busiest KSF server right now, with the live panels filled in)\n" +
-            "KSFCompanion.exe --push \"<cmd>\" [raw|commandline]   send a console command to the running game\n" +
-            "KSFCompanion.exe --hud <demo.dem>   show the timer text (stage you're on, stage finishes) found in a demo";
+            "ksf-companion                  run in the tray (normal use; --background starts without the dashboard)\n" +
+            "ksf-companion --status         show what KSF Companion finds: Steam, CS:S, your account, -usercon, the game\n" +
+            "ksf-companion --install        add the cfgs/keys to CS:S\n" +
+            "ksf-companion --uninstall      remove them again (close CS:S first)\n" +
+            "ksf-companion --card <map> [66|100]   print the KSF card for a map\n" +
+            "ksf-companion --parse <log>    show which maps/F5 presses a console log contains\n" +
+            "ksf-companion --preview <map> <file.png> [width] [height] [66|100]   render the dashboard to an image\n" +
+            "               (map \"live\" = the busiest KSF server right now, with the live panels filled in;\n" +
+            "                map \"sample\" = made-up data, no network needed)\n" +
+            "ksf-companion --push \"<cmd>\"   send a console command to the running game and print its answer\n" +
+            "ksf-companion --hud <demo.dem> show the timer text (stage you're on, stage finishes) found in a demo\n" +
+            "ksf-companion --clock-test | --binds-test | --selftest   the built-in tests";
 
         public static int Run(string[] args, Settings settings)
         {
-            if (NativeMethods.GetStdHandle(NativeMethods.STD_OUTPUT_HANDLE) == IntPtr.Zero)
-                NativeMethods.AttachConsole(NativeMethods.ATTACH_PARENT_PROCESS);
             var output = Console.Out;
 
             try
@@ -51,8 +51,12 @@ namespace KsfCompanion
                             if (args[0] == "--install") config.Install(settings);
                             else config.Uninstall(settings);
                             output.WriteLine((args[0] == "--install" ? "installed into " : "removed from ") + dir);
+                            if (args[0] == "--install") output.WriteLine("Add -usercon to CS:S's launch options in Steam so KSF Companion can send the game console commands.");
                             return 0;
                         }
+
+                    case "--status":
+                        return Status(settings, output);
 
                     case "--card" when args.Length > 1:
                         {
@@ -84,6 +88,8 @@ namespace KsfCompanion
                         return ClockTest(output);
                     case "--binds-test":
                         return BindsTest(output);
+                    case "--selftest":
+                        return SelfTest.Run(output);
                     case "--hud" when args.Length > 1:
                         {
                             // Reads the demo the way the app reads the live one, in pieces, as if the game were still writing it.
@@ -102,16 +108,29 @@ namespace KsfCompanion
 
                     case "--push" when args.Length > 1:
                         {
-                            var pid = GameBridge.FindGameProcessId();
-                            if (pid == 0)
+                            if (GameBridge.FindGameProcessId() == 0)
                             {
                                 output.WriteLine("CS:S isn't running");
                                 return 1;
                             }
-                            var format = args.Length > 2 && args[2] == "commandline" ? LinkFormat.CommandLine : LinkFormat.Raw;
-                            var result = GameBridge.Send(GameBridge.FindGameWindow(pid), GameBridge.Wrap(args[1], format));
-                            output.WriteLine("result: " + result);
-                            return result == SendResult.Accepted || result == SendResult.Declined ? 0 : 1;
+                            using var link = new GameLink(GameConfig.RconPort(settings), GameConfig.RconPassword(settings));
+                            var problem = link.OpenAsync().GetAwaiter().GetResult();
+                            if (problem != LinkProblem.None)
+                            {
+                                output.WriteLine(problem == LinkProblem.BadPassword
+                                    ? "the game didn't accept KSF Companion's password - restart CS:S once"
+                                    : $"the game isn't listening on port {GameConfig.RconPort(settings)} - is -usercon in CS:S's launch options?");
+                                return 1;
+                            }
+                            var reply = link.SendAsync(args[1], TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+                            if (reply == null)
+                            {
+                                output.WriteLine("the game didn't answer (busy loading?)");
+                                return 1;
+                            }
+                            output.Write(reply);
+                            if (reply.Length > 0 && !reply.EndsWith("\n", StringComparison.Ordinal)) output.WriteLine();
+                            return 0;
                         }
 
                     default:
@@ -130,7 +149,50 @@ namespace KsfCompanion
             }
         }
 
-        /// <summary>Renders the dashboard with live KSF data to a PNG without opening a window.</summary>
+        /// <summary>What KSF Companion finds on this PC - the first thing to look at when something doesn't work.</summary>
+        static int Status(Settings settings, TextWriter output)
+        {
+            void Line(string what, string value) => output.WriteLine($"{what,-24}{value}");
+            Line("settings", Path.Combine(Program.DataDir, "settings.ini"));
+            Line("cache", Program.CacheDir);
+            var roots = SteamLocator.SteamRoots().ToList();
+            Line("steam", roots.Count == 0 ? "not found (looked in ~/.steam, ~/.local/share/Steam, the Flatpak and the Snap)" : string.Join("  ", roots));
+            var dir = SteamLocator.FindCstrikeDir(settings.Get("game_dir"));
+            Line("counter-strike: source", dir ?? "not found - put your .../Counter-Strike Source/cstrike folder in settings.ini (game_dir)");
+            if (dir != null)
+                Line("set up in the game", new GameConfig(dir).IsInstalled ? "yes (autoexec.cfg has KSF Companion's block)" : "not yet - it is when KSF Companion starts");
+            var steamId = SteamLocator.FindSteamId(settings.Get("steamid"));
+            Line("steam account", steamId ?? "unknown - log into Steam, or set steamid in settings.ini");
+            var options = steamId == null ? null : SteamLocator.LaunchOptions(steamId);
+            Line("cs:s launch options", options == null ? "couldn't read Steam's config for this account" : options.Length == 0 ? "(none)" : options);
+            if (options != null)
+                Line("-usercon", SteamLocator.HasLaunchOption(options, "-usercon") ? "yes" : "MISSING - add it, so KSF Companion can send the game console commands");
+            var pid = GameBridge.FindGameProcessId();
+            Line("game", pid == 0 ? "not running" : $"running (process {pid})");
+            if (pid != 0)
+            {
+                var port = GameConfig.RconPort(settings);
+                using var link = new GameLink(port, GameConfig.RconPassword(settings));
+                var problem = link.OpenAsync().GetAwaiter().GetResult();
+                Line("game console (rcon)", problem == LinkProblem.None ? $"connected (port {port})"
+                    : problem == LinkProblem.BadPassword ? "the password wasn't accepted - restart CS:S once"
+                    : $"nothing listening on port {port} - -usercon missing, or the game started before KSF Companion set it up");
+            }
+            return 0;
+        }
+
+        /// <summary>The app's look without a display: Skia drawing into memory, for --preview and the UI self-test.</summary>
+        internal static void StartHeadless()
+        {
+            AppBuilder.Configure<App>()
+                .UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .WithInterFont()
+                .With(new FontManagerOptions { DefaultFamilyName = "fonts:Inter#Inter" })
+                .SetupWithoutStarting();
+        }
+
+        /// <summary>Renders the dashboard with live KSF data (or made-up data for "sample") to a PNG without opening a window.</summary>
         static int Preview(string[] args, Settings settings, TextWriter output)
         {
             var map = args[1].ToLowerInvariant();
@@ -141,9 +203,14 @@ namespace KsfCompanion
             var style = settings.GetInt("ksf_style", 0, 3);
             var steamId = SteamLocator.FindSteamId(settings.Get("steamid")) ?? SteamLocator.ParseSteamId(settings.Get("last_steamid"));
 
-            Program.CreateApplication();
+            StartHeadless();
             // The picture is taken straight away, before any bar could fill up.
             BarFill.Animate = false;
+            if (map == "sample")
+            {
+                var sample = SampleData.Dashboard();
+                return Render(sample, KeyNames.From(settings), png, width, height, output);
+            }
             using var api = new KsfApi();
             var images = new ImageCache(api.Http);
             var later = new PlayLaterList(Path.Combine(Program.DataDir, "play-later.txt"));
@@ -333,21 +400,30 @@ namespace KsfCompanion
                 vm.Page = "nominate";
             }
 
-            var window = new DashboardWindow(vm, KeyNames.From(settings));
-            if (celebrate) window.ShowCelebrationStill();
-            var root = (FrameworkElement)window.Content;
-            window.Relayout(width);
-            root.Measure(new Size(width, height));
-            root.Arrange(new Rect(0, 0, width, height));
-            root.UpdateLayout();
+            return Render(vm, KeyNames.From(settings), png, width, height, output, celebrate);
+        }
 
-            var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
-            bitmap.Render(root);
-            var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(bitmap));
-            using (var file = File.Create(png)) encoder.Save(file);
+        /// <summary>Lays the dashboard out at the given size and saves what it draws as a PNG.</summary>
+        internal static int Render(DashboardViewModel vm, KeyNames keys, string png, int width, int height, TextWriter output, bool celebrate = false)
+        {
+            var celebrateStill = celebrate || Environment.GetEnvironmentVariable("KSFC_PREVIEW_CELEBRATE") == "1";
+            var window = new DashboardWindow(vm, keys) { Width = width, Height = height };
+            if (celebrateStill) window.ShowCelebrationStill();
+            window.Show();
+            window.Relayout(width);
+            window.UpdateLayout();
+            Dispatcher.UIThread.RunJobs();
+            var frame = window.CaptureRenderedFrame();
+            if (frame == null)
+            {
+                output.WriteLine("nothing was drawn");
+                return 1;
+            }
+            frame.Save(png);
             output.WriteLine("rendered " + png);
-            return Environment.GetEnvironmentVariable("KSFC_UI_SELFTEST") == "1" ? CheckHoverAnimations(root, output) : 0;
+            window.AllowClose = true;
+            window.Close();
+            return 0;
         }
 
         /// <summary>The map clock against made-up timelines: joining mid-map, extensions (said and unsaid), the timer's panel and countdown.</summary>
@@ -544,48 +620,6 @@ namespace KsfCompanion
             if (zones.Count == 0) return;
             Task.Run(() => api.FetchZoneWrsAsync(report.Info.Name, zones, report.Game, style,
                 (zone, wr) => { if (wr != null) report.ZoneWrs[zone] = wr; }, CancellationToken.None)).GetAwaiter().GetResult();
-        }
-
-        /// <summary>Starts every hover animation in the dashboard once, so a broken one shows up here instead of at runtime.</summary>
-        static int CheckHoverAnimations(DependencyObject root, TextWriter output)
-        {
-            int started = 0, failed = 0;
-            foreach (var element in Descendants(root).OfType<FrameworkElement>())
-            {
-                FrameworkTemplate template = element is System.Windows.Controls.Control control ? control.Template
-                    : element is System.Windows.Controls.ContentPresenter presenter ? presenter.ContentTemplate
-                    : null;
-                // Collapsed elements never build their template, so there is nothing to hover.
-                if (template == null || element.Visibility != Visibility.Visible || VisualTreeHelper.GetChildrenCount(element) == 0) continue;
-                var triggers = template is ControlTemplate ct ? ct.Triggers : template is DataTemplate dt ? dt.Triggers : null;
-                if (triggers == null) continue;
-                foreach (var trigger in triggers)
-                    foreach (var action in trigger.EnterActions.Concat(trigger.ExitActions).OfType<BeginStoryboard>())
-                    {
-                        try
-                        {
-                            action.Storyboard.Begin(element, template);
-                            started++;
-                        }
-                        catch (Exception ex)
-                        {
-                            failed++;
-                            output.WriteLine($"FAILED on {element.GetType().Name} '{(element as ContentControl)?.Content}' ({element.Name}): {ex.Message}");
-                        }
-                    }
-            }
-            output.WriteLine($"hover animations started: {started}, failed: {failed}");
-            return failed == 0 ? 0 : 1;
-        }
-
-        static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
-        {
-            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
-            {
-                var child = VisualTreeHelper.GetChild(parent, i);
-                yield return child;
-                foreach (var grandchild in Descendants(child)) yield return grandchild;
-            }
         }
     }
 }

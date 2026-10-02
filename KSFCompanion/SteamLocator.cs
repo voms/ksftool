@@ -1,21 +1,52 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
-using Microsoft.Win32;
 
 namespace KsfCompanion
 {
     static class SteamLocator
     {
         const ulong SteamId64Base = 76561197960265728UL;
+        /// <summary>Counter-Strike: Source on Steam.</summary>
+        public const string CssAppId = "240";
 
-        /// <summary>Finds ...\Counter-Strike Source\cstrike, either from settings or across all Steam libraries.</summary>
+        /// <summary>
+        /// Steam's folders on this PC: the usual install (~/.steam/steam, ~/.local/share/Steam - also what NixOS's
+        /// programs.steam uses), the Flatpak and the Snap. STEAM_DIR, when set, comes first. Each one only once.
+        /// </summary>
+        public static IEnumerable<string> SteamRoots()
+        {
+            var home = Program.Home;
+            var dataHome = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
+            if (string.IsNullOrWhiteSpace(dataHome)) dataHome = Path.Combine(home, ".local", "share");
+            var candidates = new[]
+            {
+                Environment.GetEnvironmentVariable("STEAM_DIR"),
+                Path.Combine(home, ".steam", "root"),
+                Path.Combine(home, ".steam", "steam"),
+                Path.Combine(dataHome, "Steam"),
+                Path.Combine(home, ".var", "app", "com.valvesoftware.Steam", ".local", "share", "Steam"),
+                Path.Combine(home, ".var", "app", "com.valvesoftware.Steam", ".steam", "steam"),
+                Path.Combine(home, "snap", "steam", "common", ".local", "share", "Steam"),
+            };
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var candidate in candidates)
+            {
+                if (string.IsNullOrWhiteSpace(candidate) || !Directory.Exists(candidate)) continue;
+                var real = RealPath(candidate);
+                if (!seen.Add(real)) continue;
+                if (Directory.Exists(Path.Combine(real, "steamapps")) || Directory.Exists(Path.Combine(real, "config"))) yield return real;
+            }
+        }
+
+        /// <summary>Finds .../Counter-Strike Source/cstrike, either from settings or across all Steam libraries.</summary>
         public static string FindCstrikeDir(string configured)
         {
             if (!string.IsNullOrWhiteSpace(configured) && !configured.Trim().Equals("auto", StringComparison.OrdinalIgnoreCase))
             {
-                var dir = configured.Trim().Trim('"');
+                var dir = ExpandHome(configured.Trim().Trim('"'));
                 if (Directory.Exists(Path.Combine(dir, "cstrike"))) dir = Path.Combine(dir, "cstrike");
                 return Directory.Exists(Path.Combine(dir, "cfg")) ? dir : null;
             }
@@ -28,22 +59,49 @@ namespace KsfCompanion
             return null;
         }
 
+        static string ExpandHome(string path) =>
+            path == "~" ? Program.Home : path.StartsWith("~/", StringComparison.Ordinal) ? Path.Combine(Program.Home, path.Substring(2)) : path;
+
+        /// <summary>Every Steam library: each Steam folder itself and the libraries its libraryfolders.vdf lists.</summary>
         static IEnumerable<string> SteamLibraries()
         {
-            var steam = (Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam", "SteamPath", null) as string)?.Replace('/', '\\');
-            if (string.IsNullOrEmpty(steam)) steam = @"C:\Program Files (x86)\Steam";
-            yield return steam;
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var steam in SteamRoots())
+            {
+                if (seen.Add(steam)) yield return steam;
+                foreach (var file in new[] { Path.Combine(steam, "steamapps", "libraryfolders.vdf"), Path.Combine(steam, "config", "libraryfolders.vdf") })
+                {
+                    var folders = Vdf.Load(file);
+                    var list = folders?.NodeAt("libraryfolders") ?? folders?.NodeAt("LibraryFolders");
+                    if (list == null) continue;
+                    foreach (var entry in list.Values)
+                    {
+                        // Newer Steam: "0" { "path" "/mnt/games/SteamLibrary" ... }; older: "1" "/mnt/games/SteamLibrary".
+                        var path = entry is Vdf.Node node ? node.TextAt("path") : entry as string;
+                        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) continue;
+                        var real = RealPath(path);
+                        if (seen.Add(real)) yield return real;
+                    }
+                }
+            }
+        }
 
-            string vdf;
-            try { vdf = File.ReadAllText(Path.Combine(steam, "steamapps", "libraryfolders.vdf")); }
-            catch (Exception) { yield break; }
-
-            foreach (Match m in Regex.Matches(vdf, "\"path\"\\s+\"([^\"]+)\""))
-                yield return m.Groups[1].Value.Replace(@"\\", @"\");
+        /// <summary>The folder with symlinks (like ~/.steam/steam) followed, so the same Steam isn't looked at twice.</summary>
+        static string RealPath(string path)
+        {
+            try
+            {
+                var full = Path.GetFullPath(path).TrimEnd('/');
+                var target = new DirectoryInfo(full).ResolveLinkTarget(returnFinalTarget: true);
+                return target != null ? Path.GetFullPath(target.FullName).TrimEnd('/') : full;
+            }
+            catch (IOException) { return path; }
+            catch (UnauthorizedAccessException) { return path; }
         }
 
         /// <summary>
-        /// The player's SteamID in the STEAM_0:X:Y form KSF uses. "auto" means whoever is logged into Steam right now.
+        /// The player's SteamID in the STEAM_0:X:Y form KSF uses. "auto" means whoever is logged into Steam right now
+        /// (Steam's registry.vdf), or else the account that logged in last (loginusers.vdf).
         /// </summary>
         public static string FindSteamId(string configured)
         {
@@ -51,10 +109,48 @@ namespace KsfCompanion
             if (configured.Length > 0 && !configured.Equals("auto", StringComparison.OrdinalIgnoreCase))
                 return ParseSteamId(configured);
 
-            if (Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam\ActiveProcess", "ActiveUser", null) is int active && active != 0)
-                return FromAccountId(unchecked((uint)active));
+            var home = Program.Home;
+            foreach (var registry in new[]
+                     {
+                         Path.Combine(home, ".steam", "registry.vdf"),
+                         Path.Combine(home, ".var", "app", "com.valvesoftware.Steam", ".steam", "registry.vdf"),
+                         Path.Combine(home, "snap", "steam", "common", ".steam", "registry.vdf"),
+                     })
+            {
+                var active = Vdf.Load(registry)?.TextAt("Registry", "HKCU", "Software", "Valve", "Steam", "ActiveProcess", "ActiveUser");
+                if (uint.TryParse(active, out var account) && account != 0) return FromAccountId(account);
+            }
+
+            foreach (var steam in SteamRoots())
+            {
+                var users = Vdf.Load(Path.Combine(steam, "config", "loginusers.vdf"))?.NodeAt("users");
+                if (users == null) continue;
+                var recent = users.FirstOrDefault(u => u.Value is Vdf.Node user && user.TextAt("MostRecent") == "1").Key;
+                if (recent != null && ParseSteamId(recent) is string id) return id;
+            }
             return null;
         }
+
+        /// <summary>
+        /// Counter-Strike: Source's launch options as set in Steam for this account ("" when there are none), or null
+        /// when Steam's config for it can't be found.
+        /// </summary>
+        public static string LaunchOptions(string steam2)
+        {
+            if (!(AccountId(steam2) is uint account)) return null;
+            foreach (var steam in SteamRoots())
+            {
+                var config = Vdf.Load(Path.Combine(steam, "userdata", account.ToString(System.Globalization.CultureInfo.InvariantCulture), "config", "localconfig.vdf"));
+                var apps = config?.NodeAt("UserLocalConfigStore", "Software", "Valve", "Steam", "apps");
+                if (apps == null) continue;
+                return apps.NodeAt(CssAppId)?.TextAt("LaunchOptions") ?? "";
+            }
+            return null;
+        }
+
+        /// <summary>Whether launch options include a flag, as a word of its own ("-usercon", not "-usercontent").</summary>
+        public static bool HasLaunchOption(string options, string flag) =>
+            options != null && Regex.IsMatch(options, @"(^|\s)" + Regex.Escape(flag) + @"(\s|$)", RegexOptions.IgnoreCase);
 
         public static string ParseSteamId(string text)
         {

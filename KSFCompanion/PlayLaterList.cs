@@ -73,7 +73,7 @@ namespace KsfCompanion
             return true;
         }
 
-        /// <summary>Picks up edits made in Notepad since the last read.</summary>
+        /// <summary>Picks up edits made in a text editor since the last read.</summary>
         void Reload()
         {
             DateTime stamp;

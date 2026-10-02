@@ -139,8 +139,8 @@ namespace KsfCompanion.Ui
 
         void Raise()
         {
-            // "Item[]" updates every Layout[key] binding.
-            foreach (var name in new[] { "Item[]", nameof(IsSimple), nameof(IsAdvanced), nameof(HiddenCount), nameof(HiddenText), nameof(Scale), nameof(ScaleText) })
+            // "Item" updates every Layout[key] binding (Avalonia's name for a change of the indexer).
+            foreach (var name in new[] { "Item", nameof(IsSimple), nameof(IsAdvanced), nameof(HiddenCount), nameof(HiddenText), nameof(Scale), nameof(ScaleText) })
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
             foreach (var part in Parts) part.Raise();
         }
