@@ -7,10 +7,8 @@
     { self, nixpkgs }:
     let
       inherit (nixpkgs) lib;
-      systems = [
-        "x86_64-linux"
-        "aarch64-linux"
-      ];
+      # CS:S only runs on x86-64, and KSF Companion runs next to it.
+      systems = [ "x86_64-linux" ];
       forAllSystems = f: lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
       # The modules install this flake's build unless you set programs.ksf-companion.package.

@@ -105,9 +105,6 @@ buildDotnetModule (finalAttrs: {
       isc
     ];
     mainProgram = "ksf-companion";
-    platforms = [
-      "x86_64-linux"
-      "aarch64-linux"
-    ];
+    platforms = [ "x86_64-linux" ];
   };
 })
