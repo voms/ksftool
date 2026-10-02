@@ -68,6 +68,10 @@
             touch $out
           '';
 
+          # A whole desktop in a VM: the Home Manager service starts it, the tray shows it, a stand-in CS:S takes its
+          # commands. Needs KVM.
+          desktop = pkgs.testers.runNixOSTest (import ./nix/tests/desktop.nix { inherit self; });
+
           # The NixOS module installs it and adds the autostart entry.
           nixos-module =
             assert lib.elem package nixos.environment.systemPackages;

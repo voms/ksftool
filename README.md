@@ -158,10 +158,12 @@ cd KSFCompanion
 dotnet build
 ./bin/Debug/net10.0/ksf-companion --selftest
 ./bin/Debug/net10.0/ksf-companion --preview sample dashboard.png 1600 1080   # made-up data, no game or network needed
-nix flake check                     # the package, its tests and the NixOS module
+nix flake check                     # the package, its tests, the NixOS module, and a desktop in a VM (needs KVM)
 ```
 
 After changing NuGet packages, regenerate `nix/deps.json`: `nix build .#ksf-companion.fetch-deps && ./result nix/deps.json`.
+The **Screenshots** workflow (Actions tab) draws the dashboard from ksf.surf's live data on a fresh machine and keeps
+the pictures - a quick check that it still reads ksf.surf right.
 
 ---
 

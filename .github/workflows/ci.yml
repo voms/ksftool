@@ -1,4 +1,5 @@
-# Builds the Nix package and runs its checks (the app's own tests and the NixOS module) on every push and pull request.
+# Builds the Nix package and runs its checks on every push and pull request: the app's own tests, the NixOS module,
+# and a whole desktop in a VM (Home Manager service, tray icon, a stand-in CS:S).
 name: CI
 
 on:
@@ -12,6 +13,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: cachix/install-nix-action@v31
+        with:
+          # The desktop test boots a VM.
+          enable_kvm: true
+          extra_nix_config: system-features = nixos-test benchmark big-parallel kvm
 
       - name: nix flake check
         run: nix flake check -L
