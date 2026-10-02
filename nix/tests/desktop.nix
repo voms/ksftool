@@ -41,6 +41,7 @@ in
       programs.ksf-companion.enable = true;
       environment.systemPackages = [
         (pkgs.writeScriptBin "cstrike_linux64" ("#!${pkgs.python3}/bin/python3\n" + builtins.readFile ./fake-cstrike.py))
+        pkgs.xdotool
       ];
 
       home-manager.useGlobalPkgs = true;
@@ -121,8 +122,11 @@ in
         machine.wait_until_succeeds(as_alice("ksf-companion --status | grep -q 'connected (port 27015)'"))
 
     with subtest("opens the dashboard when it's started again"):
+        # Its window was made (hidden) when the game started: starting the app again has to show it.
+        visible = "DISPLAY=:0 xdotool search --onlyvisible --name '^KSF Companion$'"
+        machine.fail(visible)
         machine.succeed(as_alice("ksf-companion"))
-        machine.wait_for_window("KSF Companion")
+        machine.wait_until_succeeds(visible)
         machine.sleep(3)
         machine.screenshot("dashboard")
 
