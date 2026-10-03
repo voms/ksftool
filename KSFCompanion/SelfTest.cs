@@ -1,7 +1,9 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -46,6 +48,7 @@ namespace KsfCompanion
                 Section("leaving a server", () => Leaving());
                 Section("private servers", () => PrivateServers());
                 Section("records page", () => RecordsPage());
+                Section("input checks", () => Inputs(root));
                 Section("game config", () => Config(root));
                 Section("rcon", () => Rcon(root));
                 Section("open files", () => Open(root));
@@ -524,7 +527,9 @@ namespace KsfCompanion
             Check("the block opens the game's console to this PC", autoexec.Contains("ip 0.0.0.0") && autoexec.Contains("hostport 27015")
                                                                    && autoexec.Contains($"rcon_password \"{password}\"") && autoexec.Contains("net_start"));
             Check("a password of its own, kept", password.Length >= 12 && GameConfig.RconPassword(settings) == password);
-            Check("settings.ini is yours only", OperatingSystem.IsWindows() || (File.GetUnixFileMode(settingsFile) & (UnixFileMode.GroupRead | UnixFileMode.OtherRead)) == 0);
+            Check("settings.ini is yours only", OwnerOnly(settingsFile));
+            // (autoexec.cfg was there before, readable by anyone: the password goes into one that isn't.)
+            Check("autoexec.cfg, with the password in it, is yours only", OwnerOnly(Path.Combine(cstrike, "cfg", "autoexec.cfg")));
             Check("cfg files with Linux line ends", !File.ReadAllText(Path.Combine(cstrike, "cfg", "ksf_companion.cfg")).Contains('\r'));
             Check("your F5 bind remembered", config.OriginalBind(settings, "F5") == "jpeg");
             // Held, the card key repeats while the console is open: the card prints once, until the key is let go.
@@ -537,6 +542,7 @@ namespace KsfCompanion
             File.WriteAllText(oldFile, "server_commands = sm_m; sm_mrank\nview = simple\n");
             var old = new Settings(oldFile);
             Check("an old settings.ini moves on to /pr and loses the Simple view", old.Get("server_commands") == "sm_m; sm_pr" && !File.ReadAllText(oldFile).Contains("view ="));
+            Check("and is made yours only", OwnerOnly(oldFile));
             File.WriteAllText(oldFile, "server_commands = sm_wr\n");
             Check("commands you picked yourself stay", new Settings(oldFile).Get("server_commands") == "sm_wr");
             Check("your in-game name", config.PlayerName() == "surfer");
@@ -547,6 +553,105 @@ namespace KsfCompanion
             Check("uninstall takes the block out", File.ReadAllText(Path.Combine(cstrike, "cfg", "autoexec.cfg")).Trim() == "rate 786432");
             Check("uninstall gives F5 back", File.ReadAllText(Path.Combine(cstrike, "cfg", "config.cfg")).Contains("bind \"F5\" \"jpeg\""));
             Check("uninstall removes its cfgs", !File.Exists(Path.Combine(cstrike, "cfg", "ksf_companion.cfg")));
+        }
+
+        /// <summary>Only you can read or write it (0600).</summary>
+        static bool OwnerOnly(string file) =>
+            OperatingSystem.IsWindows() || File.GetUnixFileMode(file) == (UnixFileMode.UserRead | UnixFileMode.UserWrite);
+
+        /// <summary>
+        /// What comes from ksf.surf, game servers and other players is checked before it goes anywhere that matters: a
+        /// console command, a file name, a link, settings.ini, memory.
+        /// </summary>
+        static void Inputs(string root)
+        {
+            Check("map names as KSF's maps are named", MapNames.IsValid("surf_utopia_njv") && MapNames.IsValid("surf_beginner2-fix") && MapNames.IsValid("surf_v2.1"));
+            Check("anything else isn't one", new[] { null, "", "surf_x; quit", "surf_x\"", "surf_x quit", "surf_x\nquit", "../autoexec", "a/b", "a\\b", "..", new string('a', 97) }
+                .All(name => !MapNames.IsValid(name)));
+            Check("server addresses: an ip:port and nothing else", Companion.IsServerAddress("192.0.2.7:27015")
+                && new[] { null, "", "192.0.2.7", "192.0.2.7:0", "192.0.2.7:27015; quit", "192.0.2.7:27015/x", "surf.example.com:27015", "\"192.0.2.7:27015\"" }
+                    .All(address => !Companion.IsServerAddress(address)));
+
+            // Your console log, October 2026: chat has " :  " between the name and the message - a name made to look
+            // like the timer's line, and a message that finishes it, is still chat.
+            Check("chat lines are told apart", Companion.IsChat("[Casual] someone :  !Mrank") && Companion.IsChat("*SPEC* someone else :  hi")
+                && Companion.IsChat("[Surf Timer] - voms finished :  in 00:00:01") && Companion.IsChat("udp/ip :  192.0.2.66:27015"));
+            // A player's name starts the lines about them ("blud connected."): one named like a line of the game's
+            // doesn't make one.
+            Check("where you've connected, from the game's own lines", Companion.ConnectedTo("Connected to 137.74.205.6:27018") == "137.74.205.6:27018"
+                && Companion.StatusAddress("udp/ip  : 137.74.205.6:27018") == "137.74.205.6:27018"
+                && Companion.StatusAddress("udp/ip  : 0.0.0.0:27015  (public ip: 192.0.2.4)") == "0.0.0.0:27015");
+            Check("not from a player named like them", Companion.ConnectedTo("Connected to 192.0.2.66:27015 connected.") == null
+                && Companion.StatusAddress("udp/ip: 192.0.2.66:27015 connected.") == null
+                && Companion.StatusAddress("udp/ip: 192.0.2.66:27015 (STEAM_0:1:7) connected from Germany") == null);
+            var started = 0;
+            var parser = new LogParser();
+            parser.GameStarted += () => started++;
+            parser.Feed(GameConfig.ReadyMarker + " connected.");
+            parser.Feed("[ksf.surf] KSF Companion ready - F5 saves the map for later, hold F6 for the map card, hold F7 for your play-later list");
+            Check("the game starting, not a player named like its line", started == 1);
+            Check("the timer's own lines aren't chat", new[]
+            {
+                "[Surf Timer] - voms finished in 01:47:25 (WR +00:17:39). Improving by 02:55:11",
+                "[Surf Timer] - voms finished bonus [Bonus 4 - Watti] in 00:18:26",
+                "[Surf Timer] - Finished [Stage 3]: 00:17:06",
+                "[Surf Timer] - Expert - surf_boreas (7/60) IP: 167.114.158.6:27016",
+                "[SM] The current map has been extended. (Received 80% of 12 votes)",
+            }.All(line => !Companion.IsChat(line)));
+
+            // settings.ini has a line for each setting: a value with line breaks in it (a name from ksf.surf) adds none.
+            var file = Path.Combine(root, "inputs.ini");
+            new Settings(file).Set("last_name", "voms\nrcon_password = x\rgame_dir = /tmp");
+            var again = new Settings(file);
+            Check("a line break in a value can't add settings", again.Get("rcon_password") == "" && again.Get("game_dir") == "auto"
+                && again.Get("last_name") == "voms rcon_password = x game_dir = /tmp");
+
+            var picture = Path.Combine(root, "picture.jpg");
+            ImageCache.Store(Png(40, 30), picture);
+            Check("a picture is kept", File.Exists(picture));
+            var bomb = Path.Combine(root, "bomb.jpg");
+            var refused = false;
+            try { ImageCache.Store(Png(10000, 10000), bomb); }
+            catch (NotSupportedException) { refused = true; }
+            Check("a small file that unpacks to an enormous picture isn't", refused && !File.Exists(bomb));
+        }
+
+        /// <summary>A grey PNG of any size: a few kilobytes even for an enormous one (a bit a pixel, all the same).</summary>
+        static byte[] Png(int width, int height)
+        {
+            var png = new MemoryStream();
+            png.Write(new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G', 0x0D, 0x0A, 0x1A, 0x0A });
+            var header = new byte[13];
+            BinaryPrimitives.WriteInt32BigEndian(header, width);
+            BinaryPrimitives.WriteInt32BigEndian(header.AsSpan(4), height);
+            header[8] = 1; // 1 bit a pixel, grey
+            Chunk("IHDR", header);
+            var pixels = new MemoryStream();
+            using (var zlib = new ZLibStream(pixels, CompressionLevel.Optimal, leaveOpen: true))
+            {
+                var row = new byte[1 + (width + 7) / 8]; // no filter, then the row
+                for (var y = 0; y < height; y++) zlib.Write(row);
+            }
+            Chunk("IDAT", pixels.ToArray());
+            Chunk("IEND", Array.Empty<byte>());
+            return png.ToArray();
+
+            void Chunk(string type, byte[] data)
+            {
+                var number = new byte[4];
+                BinaryPrimitives.WriteInt32BigEndian(number, data.Length);
+                png.Write(number);
+                var body = Encoding.ASCII.GetBytes(type).Concat(data).ToArray();
+                png.Write(body);
+                var crc = 0xFFFFFFFFu;
+                foreach (var b in body)
+                {
+                    crc ^= b;
+                    for (var i = 0; i < 8; i++) crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320u : crc >> 1;
+                }
+                BinaryPrimitives.WriteUInt32BigEndian(number, ~crc);
+                png.Write(number);
+            }
         }
 
         /// <summary>A stand-in for the game's remote console: the password, echo, a long answer, and the end marker.</summary>

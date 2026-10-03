@@ -92,7 +92,8 @@ namespace KsfCompanion
                 "exec ksf_companion",
                 Echo($"KSF Companion ready - {GameKeys.Label(keys.Save)} saves the map for later, hold {GameKeys.Label(keys.Card)} for the map card, hold {GameKeys.Label(keys.List)} for your play-later list"),
                 BlockEnd);
-            WriteFile(CfgPath("autoexec.cfg"), (rest.Length > 0 ? rest + "\n\n" : "") + block + "\n");
+            // The block has the remote console password in it: autoexec.cfg is made yours only.
+            WriteFile(CfgPath("autoexec.cfg"), (rest.Length > 0 ? rest + "\n\n" : "") + block + "\n", secret: true);
         }
 
         /// <summary>The port the game's remote console listens on (rcon_port in settings.ini).</summary>
@@ -341,11 +342,12 @@ namespace KsfCompanion
 
         void Write(string cfgName, string content) => WriteFile(CfgPath(cfgName), content);
 
-        static void WriteFile(string path, string content)
+        static void WriteFile(string path, string content, bool secret = false)
         {
-            // Write to a temp file first so the game never execs a half-written cfg.
+            // Write to a temp file first so the game never execs a half-written cfg. (It takes the temp file's place,
+            // mode and all.)
             var temp = path + ".tmp";
-            File.WriteAllText(temp, content, NoBom);
+            Write(temp);
             try
             {
                 if (File.Exists(path)) File.Replace(temp, path, null);
@@ -353,8 +355,14 @@ namespace KsfCompanion
             }
             catch (IOException)
             {
-                File.WriteAllText(path, content, NoBom);
+                Write(path);
                 TryDelete(temp);
+            }
+
+            void Write(string file)
+            {
+                if (secret) PrivateFile.WriteAllText(file, content);
+                else File.WriteAllText(file, content, NoBom);
             }
         }
 

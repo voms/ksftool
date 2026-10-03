@@ -132,10 +132,14 @@ Everything in detail: [KSFCompanion/README.txt](KSFCompanion/README.txt).
 up your public Steam ID (the one on your profile page) so it can show your own KSF times.
 
 **The remote console:** `-usercon` makes CS:S accept console commands on TCP port 27015 while it runs, from anyone who
-has the password. KSF Companion makes up a random 24-character one, keeps it in its settings file (readable only by
-you) and puts it in your `autoexec.cfg`. NixOS's firewall keeps that port closed to other computers (unless you've
+has the password. KSF Companion makes up a random 24-character one and keeps it in its settings file and your
+`autoexec.cfg`, both readable only by you. NixOS's firewall keeps that port closed to other computers (unless you've
 opened it, e.g. with `programs.steam.dedicatedServer.openFirewall`); on other distros, don't open or forward TCP 27015
 unless you're hosting a server. Another port: `rcon_port` in settings.ini.
+
+**What comes in from outside:** ksf.surf's data, game servers' answers and other players' chat are checked before
+they're used. Map names and server addresses are checked before they go into a console command, a link or a file name,
+text before it's printed in your console, and pictures before they're opened. Chat can't pass for the timer's messages.
 
 ## Where things are
 

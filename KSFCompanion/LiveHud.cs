@@ -21,7 +21,7 @@ namespace KsfCompanion
         static readonly Regex PanelZone = new Regex(@"^- (?<kind>Stage|Bonus) (?<n>\d+)\b", RegexOptions.Multiline | RegexOptions.CultureInvariant);
         static readonly Regex StartZone = new Regex(@"\[Zone: (?<kind>Stage|Bonus) (?<n>\d+)", RegexOptions.CultureInvariant);
         // "Finished [Stage 3]: 00:17:06" then "(WR +00:02:09)" on the next line
-        static readonly Regex Finished = new Regex(@"Finished \[(?<kind>Stage|Bonus) (?<n>\d+)[^\]]*\]: (?<time>\d+(?::\d{2}){1,2}(?:[:.]\d{1,3})?)",
+        static readonly Regex Finished = new Regex(@"Finished \[(?<kind>Stage|Bonus) (?<n>\d+)[^\]]{0,128}\]: (?<time>\d+(?::\d{2}){1,2}(?:[:.]\d{1,3})?)",
             RegexOptions.CultureInvariant);
         // "Timeleft: 8 minutes" / "Timeleft: 1 minute" / "Timeleft: Less than 1 minute" (top of the right-hand panel)
         static readonly Regex PanelTimeLeft = new Regex(@"Timeleft: (?:(?<n>\d+) minutes?|(?<less>Less than 1 minute))", RegexOptions.CultureInvariant);

@@ -28,6 +28,17 @@ namespace KsfCompanion
         public double Popularity;
     }
 
+    /// <summary>
+    /// A map's name as KSF's maps are named: letters, digits, _, - and . (surf_utopia_njv). Names come from ksf.surf and
+    /// game servers; one with anything else in it - a quote, a ; or a / - never goes into a console command or a file name.
+    /// </summary>
+    static class MapNames
+    {
+        static readonly Regex Valid = new Regex(@"^[A-Za-z0-9_\-.]{1,96}$", RegexOptions.Compiled);
+
+        public static bool IsValid(string name) => name != null && Valid.IsMatch(name) && !name.Contains("..", StringComparison.Ordinal);
+    }
+
     /// <summary>One row of a map leaderboard; rank 1 is the world record.</summary>
     sealed class WorldRecord
     {
@@ -236,7 +247,8 @@ namespace KsfCompanion
         {
             // Map pictures downloading at the same time never make the data requests wait behind them: .NET opens as
             // many connections to ksf.surf as it needs.
-            http = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
+            // Nothing ksf.surf sends is anywhere near this big (a records page with every map is well under 1 MB).
+            http = new HttpClient { Timeout = TimeSpan.FromSeconds(12), MaxResponseContentBufferSize = 32 * 1024 * 1024 };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("KSFCompanion/1.0");
             http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
             zoneRecords = new ZoneRecordStore(Path.Combine(Program.CacheDir, "zone-records.txt"));

@@ -175,7 +175,7 @@ In the game
   for the map's time limit,
   and the demo it reads the timer from). It sends them over the game's remote console (CS:S needs
   -usercon in its launch options for that), on port 27015 of this PC with a password it makes up
-  (rcon_port and rcon_password in settings.ini).
+  (rcon_port and rcon_password in settings.ini; settings.ini and autoexec.cfg are readable only by you).
   Tray icon > "Run /m and /pr on map load" makes it ask KSF for the map info and your time each
   map - KSF answers those in chat, so that's off unless you turn it on (server_commands in
   settings.ini picks the commands).
@@ -200,6 +200,9 @@ Good to know
   - It only reads files the game writes (the console log and, on KSF, its own demo recording) and
     sends normal console commands (like a keybind would). It never reads or writes game memory
     and injects nothing, so it is not a cheat and is VAC safe.
-  - Data comes from ksf.surf (the same data their website uses; not an official API).
+  - Data comes from ksf.surf (the same data their website uses; not an official API). What comes
+    from it, from game servers and from chat is checked before it's used: map names and server
+    addresses before they go into a console command, a link or a file name, pictures before
+    they're opened - and chat can't pass for the timer's messages.
   - To remove it from CS:S: close the game, then tray icon > "Remove from CS:S...".
     That also puts your old F5/F6/F7 binds back.

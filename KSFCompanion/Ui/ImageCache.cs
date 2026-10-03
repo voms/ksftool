@@ -17,6 +17,8 @@ namespace KsfCompanion.Ui
     sealed class ImageCache
     {
         const int StoredWidth = 1600;
+        // Map pictures are a couple of million pixels: this is far more than any, and still only ~160 MB unpacked.
+        internal const long MaxPixels = 40_000_000;
         readonly HttpClient http;
         readonly string dir;
         // Thumbnails (the nominate page can ask for dozens) and the pictures of the map you're on don't share a
@@ -31,9 +33,19 @@ namespace KsfCompanion.Ui
             Directory.CreateDirectory(dir);
         }
 
-        public Task<Bitmap> MapAsync(string map, int width, bool urgent = false) => LoadAsync("map_" + map.ToLowerInvariant(), KsfApi.MapImage(map), width, urgent);
+        /// <summary>A map's picture (null for a name that isn't a map's: the picture's file is named after the map).</summary>
+        public Task<Bitmap> MapAsync(string map, int width, bool urgent = false) =>
+            MapNames.IsValid(map) ? LoadAsync("map_" + map.ToLowerInvariant(), KsfApi.MapImage(map), width, urgent) : Task.FromResult<Bitmap>(null);
 
-        public Task<Bitmap> AvatarAsync(string url) => LoadAsync("avatar_" + Hash(url), url, 96);
+        /// <summary>A player's avatar, from the address ksf.surf gives for it - over https only.</summary>
+        public Task<Bitmap> AvatarAsync(string url)
+        {
+            // (Steam's picture servers answer an old http:// address over https too.)
+            if (url != null && url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)) url = "https://" + url.Substring("http://".Length);
+            return Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps
+                ? LoadAsync("avatar_" + Hash(url), url, 96)
+                : Task.FromResult<Bitmap>(null);
+        }
 
         /// <summary>The map picture shrunk to a few dozen pixels and blurred: a soft wash of its colours for behind the dashboard.</summary>
         public async Task<Bitmap> AmbientAsync(string map)
@@ -139,9 +151,13 @@ namespace KsfCompanion.Ui
             return await Task.Run(() => Decode(file, width)).ConfigureAwait(false);
         }
 
-        static void Store(byte[] bytes, string file)
+        internal static void Store(byte[] bytes, string file)
         {
-            using var frame = SKBitmap.Decode(bytes) ?? throw new NotSupportedException("not a picture");
+            using var data = SKData.CreateCopy(bytes);
+            using var codec = SKCodec.Create(data) ?? throw new NotSupportedException("not a picture");
+            // A small file can say it's an enormous picture: its size is checked before it's unpacked into memory.
+            if ((long)codec.Info.Width * codec.Info.Height > MaxPixels) throw new NotSupportedException("far too big a picture");
+            using var frame = SKBitmap.Decode(codec) ?? throw new NotSupportedException("not a picture");
             using var image = frame.Width > StoredWidth
                 ? frame.Resize(new SKImageInfo(StoredWidth, Math.Max(1, (int)Math.Round(frame.Height * (double)StoredWidth / frame.Width))), SKFilterQuality.High)
                 : frame.Copy();

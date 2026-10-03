@@ -30,10 +30,12 @@ namespace KsfCompanion
         const int MaxCatchUpBytes = 8 * 1024 * 1024;
         const string Tick66 = "css", Tick100 = "css100t";
         static readonly Regex HostnameLine = new Regex(@"^hostname\s*:\s*(.*)$", RegexOptions.IgnoreCase);
-        // Also from "status": the server's address, which is how KSF's server list names it too.
-        static readonly Regex AddressLine = new Regex(@"^udp/ip\s*:\s*(?<address>\d{1,3}(?:\.\d{1,3}){3}:\d+)", RegexOptions.IgnoreCase);
-        // Joining a server, before its map even starts loading: "Connected to 137.74.205.6:27018"
-        static readonly Regex ConnectedLine = new Regex(@"^Connected to (?<address>\d{1,3}(?:\.\d{1,3}){3}:\d+)", RegexOptions.Compiled);
+        // Also from "status": the server's address, which is how KSF's server list names it too. The whole line (some
+        // servers add "(public ip: ...)"): a player's name is printed at the start of lines too ("name connected."), and
+        // one named "udp/ip: <an address>" mustn't pass for it.
+        static readonly Regex AddressLine = new Regex(@"^udp/ip\s*:\s*(?<address>\d{1,3}(?:\.\d{1,3}){3}:\d+)(?:\s+\([^()]*\))*$", RegexOptions.IgnoreCase);
+        // Joining a server, before its map even starts loading: "Connected to 137.74.205.6:27018" (the whole line, as above)
+        static readonly Regex ConnectedLine = new Regex(@"^Connected to (?<address>\d{1,3}(?:\.\d{1,3}){3}:\d+)$", RegexOptions.Compiled);
         // KSF's timer announces runs in chat: [Surf Timer] - SomePlayer finished in 08:23:89 (WR +07:16:94)
         static readonly Regex FinishLine = new Regex(@"^\[Surf Timer\] - (?<name>.+?) finished (?<zone>.*?)in (?<time>\d+(?:[:.]\d{1,3}){1,3})", RegexOptions.Compiled);
         // Comes just before your own finish line: "... You finished the map for the first time . You have received [47] points"
@@ -766,6 +768,9 @@ namespace KsfCompanion
 
         void OnLine(string line)
         {
+            // Other players' chat is never read: it can be made to look like any line below.
+            if (IsChat(line)) return;
+
             if (awaitedNonce != null && line.StartsWith(GameConfig.LinkMarker, StringComparison.Ordinal) && line.EndsWith(awaitedNonce, StringComparison.Ordinal))
                 nonceSeen?.TrySetResult(true);
 
@@ -820,10 +825,9 @@ namespace KsfCompanion
                 CancelLeaveCheck();
                 return;
             }
-            var connected = ConnectedLine.Match(line);
-            if (connected.Success)
+            if (ConnectedTo(line) is string joined)
             {
-                connectedAddress = connected.Groups["address"].Value;
+                connectedAddress = joined;
                 yourServer = null;
                 offServer = false;
                 CancelLeaveCheck();
@@ -875,10 +879,8 @@ namespace KsfCompanion
                 return;
             }
 
-            var address = AddressLine.Match(line);
-            if (address.Success)
+            if (StatusAddress(line) is string value)
             {
-                var value = address.Groups["address"].Value;
                 // A server's answer to "status" (the game's own, off a server, would be this PC's).
                 if (!value.StartsWith("0.0.0.0", StringComparison.Ordinal) && !value.StartsWith("127.", StringComparison.Ordinal)) leaveCheck.Answered(DateTime.Now);
                 if (lastStatus != null && lastStatus.Address == null) lastStatus.Address = value;
@@ -971,6 +973,27 @@ namespace KsfCompanion
                 pointsJustEarned = points.Success ? int.Parse(points.Groups["points"].Value, CultureInfo.InvariantCulture) : (int?)null;
                 OnOwnFinish(null, null);
             }
+        }
+
+        /// <summary>
+        /// A player's chat line: "[Casual] name :  message", "*SPEC* name :  message". A name and a message can be made to
+        /// look like the game's or the timer's lines ("[Surf Timer] - you finished ..."), but the game puts " :  " between
+        /// them, and its own lines and the server's never have that in them.
+        /// </summary>
+        internal static bool IsChat(string line) => line.Contains(" :  ", StringComparison.Ordinal);
+
+        /// <summary>The server in "Connected to 137.74.205.6:27018" (the whole line), or null.</summary>
+        internal static string ConnectedTo(string line)
+        {
+            var connected = ConnectedLine.Match(line);
+            return connected.Success ? connected.Groups["address"].Value : null;
+        }
+
+        /// <summary>The server's address in the answer to "status" ("udp/ip  : 137.74.205.6:27018", the whole line), or null.</summary>
+        internal static string StatusAddress(string line)
+        {
+            var address = AddressLine.Match(line);
+            return address.Success ? address.Groups["address"].Value : null;
         }
 
         bool IsMe(string name) => name == "You" ||
@@ -1795,11 +1818,15 @@ namespace KsfCompanion
             {
                 var at = entry.IndexOf('@');
                 var address = at < 0 ? entry : entry.Substring(0, at);
-                if (!IPEndPoint.TryParse(address, out var ip) || ip.Port == 0) continue;
+                if (!IsServerAddress(address)) continue;
                 list[address] = at >= 0 && entry.Substring(at + 1).StartsWith("100", StringComparison.Ordinal) ? Tick100 : Tick66;
             }
             return list;
         }
+
+        /// <summary>A game server's ip:port, and nothing else (no host name, no path, no ; or quote).</summary>
+        internal static bool IsServerAddress(string address) =>
+            address != null && IPEndPoint.TryParse(address, out var server) && server.Port != 0 && !address.Contains('/');
 
         /// <summary>The server you're on is KSF's though ksf.surf doesn't list it: from now on (and next time) it counts as one.</summary>
         void CountAsKsf(string address)
@@ -2535,7 +2562,8 @@ namespace KsfCompanion
         /// </summary>
         async void Nominate(string map)
         {
-            if (string.IsNullOrEmpty(map)) return;
+            // (It goes into a console command: a name that isn't a map's is never sent.)
+            if (!MapNames.IsValid(map)) return;
             if (link == LinkState.Ready && (yourServer != null || onKsfServer) && await PushAsync("sm_nominate " + map))
             {
                 vm.Toast = $"Nominated {map} - the server replies in chat";
@@ -2563,7 +2591,8 @@ namespace KsfCompanion
 
         void Join(string address)
         {
-            if (string.IsNullOrEmpty(address)) return;
+            // It goes into a steam:// link, or a console command: nothing but an ip:port.
+            if (!IsServerAddress(address)) return;
             // Steam hands it to the running game (or starts it).
             if (Desktop.Open("steam://connect/" + address)) vm.Toast = "Joining " + address + "...";
             else CopyText("connect " + address, $"Copied  connect {address}  - paste it in the CS:S console");

@@ -4,7 +4,6 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace KsfCompanion
 {
@@ -22,7 +21,6 @@ namespace KsfCompanion
     sealed class PlayLaterList
     {
         const string SavedFormat = "yyyy-MM-dd HH:mm";
-        static readonly Regex MapName = new Regex(@"^[A-Za-z0-9_\-.]+$");
 
         readonly string path;
         List<PlayLaterEntry> items = new List<PlayLaterEntry>();
@@ -50,7 +48,7 @@ namespace KsfCompanion
 
         public bool Add(string map, int? tier)
         {
-            if (Contains(map)) return false;
+            if (!MapNames.IsValid(map) || Contains(map)) return false;
             items.Insert(0, new PlayLaterEntry { Map = map.ToLowerInvariant(), Tier = tier, Saved = DateTime.Now });
             Save();
             return true;
@@ -91,7 +89,7 @@ namespace KsfCompanion
                 var line = raw.Trim();
                 if (line.Length == 0 || line.StartsWith("#")) continue;
                 var parts = line.Split('|').Select(p => p.Trim()).ToArray();
-                if (!MapName.IsMatch(parts[0])) continue;
+                if (!MapNames.IsValid(parts[0])) continue;
 
                 var entry = new PlayLaterEntry { Map = parts[0].ToLowerInvariant() };
                 foreach (var part in parts.Skip(1))

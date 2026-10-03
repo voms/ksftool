@@ -90,6 +90,10 @@ namespace KsfCompanion
 
         public void Set(string key, string value)
         {
+            // One line per setting: a value with a line break in it (a player's name from ksf.surf, say) would add
+            // settings of its own to the file.
+            value = new string((value ?? "").Select(ch => char.IsControl(ch) ? ' ' : ch).ToArray());
+            if (values.TryGetValue(key, out var old) && old == value) return;
             values[key] = value;
             Save();
         }
@@ -116,14 +120,35 @@ namespace KsfCompanion
                 foreach (var k in managed) sb.AppendLine($"{k} = {values[k]}");
             }
 
-            try
-            {
-                File.WriteAllText(path, sb.ToString());
-                // It holds the password of the game's remote console (rcon_password): for your eyes only.
-                if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-            }
+            // It holds the password of the game's remote console (rcon_password): for your eyes only.
+            try { PrivateFile.WriteAllText(path, sb.ToString()); }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    /// <summary>Files only you can read and write (0600), from the moment they're made: ones with a password in them.</summary>
+    static class PrivateFile
+    {
+        const UnixFileMode OwnerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+
+        public static void WriteAllText(string path, string text)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                File.WriteAllText(path, text);
+                return;
+            }
+
+            // A file that's already there keeps its mode when it's written over: closed up first. (A drive without
+            // Unix permissions - FAT, NTFS - can't be, and the write goes ahead.)
+            try { if (File.Exists(path)) File.SetUnixFileMode(path, OwnerOnly); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+
+            using var stream = new FileStream(path, new FileStreamOptions { Mode = FileMode.Create, Access = FileAccess.Write, UnixCreateMode = OwnerOnly });
+            using var writer = new StreamWriter(stream, new UTF8Encoding(false));
+            writer.Write(text);
         }
     }
 }

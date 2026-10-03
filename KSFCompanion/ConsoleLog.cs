@@ -192,7 +192,9 @@ namespace KsfCompanion
             {
                 InGame?.Invoke();
             }
-            else if (line.StartsWith(GameConfig.ReadyMarker, StringComparison.Ordinal))
+            // (With what comes after it in autoexec.cfg's echo: a player named "[ksf.surf] KSF Companion ready" joins
+            // with a line that starts the same, "... connected.")
+            else if (line.StartsWith(GameConfig.ReadyMarker + " - ", StringComparison.Ordinal))
             {
                 GameStarted?.Invoke();
             }
