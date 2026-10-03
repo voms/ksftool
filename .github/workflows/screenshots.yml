@@ -26,6 +26,10 @@ on:
         description: 'Or ask game servers what they tell a server browser, as the server list asks private KSF servers (ip:port ...)'
         required: false
         default: ''
+      records:
+        description: 'Or read a player''s records page as the Records tab does, and draw the tab (a Steam ID)'
+        required: false
+        default: ''
   push:
     paths: ['.github/workflows/screenshots.yml']
 
@@ -98,9 +102,16 @@ jobs:
         if: inputs.api == '' && inputs.server == ''
         env:
           MAP: ${{ inputs.map }}
+          RECORDS: ${{ inputs.records }}
         run: |
           nix build .#ksf-companion
           export KSFC_DATA_DIR="$RUNNER_TEMP/ksfc"
+          # A player's records: what the Records tab reads, and the tab drawn (66 tick), then 100 tick's numbers.
+          if [ -n "$RECORDS" ]; then
+            ./result/bin/ksf-companion --records "$RECORDS" 66 records.png
+            ./result/bin/ksf-companion --records "$RECORDS" 100
+            exit 0
+          fi
           # ksf.surf only takes so many requests a minute: a map you name is all this run asks it about.
           if [ -n "$MAP" ]; then
             ./result/bin/ksf-companion --card "$MAP"

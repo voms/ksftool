@@ -146,6 +146,21 @@ namespace KsfCompanion
                     vm.MapSearch = Environment.GetEnvironmentVariable("KSFC_PREVIEW_SEARCH") ?? "";
                     vm.Page = "nominate";
                     break;
+                case "records":
+                    vm.Records.ThumbsNeeded += rows =>
+                    {
+                        foreach (var row in rows) vm.Records.SetThumb(row, Picture(240, 135, row.Map.Length * 7 + row.Map[6]));
+                    };
+                    vm.Records.RefreshCommand = nothing;
+                    vm.SetMapsContext(saved, info.Name);
+                    vm.Records.SetRecords(Records(now, info), "you  ·  66T", now.AddMinutes(-3), loading: false);
+                    vm.Records.View = Environment.GetEnvironmentVariable("KSFC_PREVIEW_VIEW") == "list" ? "list" : "tiles";
+                    vm.Records.Show = Environment.GetEnvironmentVariable("KSFC_PREVIEW_SHOW") ?? "all";
+                    vm.Records.Search = Environment.GetEnvironmentVariable("KSFC_PREVIEW_SEARCH") ?? "";
+                    vm.NominateTick = "css";
+                    vm.NominateTickCommand = nothing;
+                    vm.Page = "records";
+                    break;
                 case "binds":
                     vm.Binds.Load(BindSet.Parse("restart=r|restart_stage=t|saveloc=MOUSE4|loadloc=MOUSE5|hide=h|turn_left=q|turn_right=e|custom:sm_stage 3=KP_END"),
                         new Dictionary<string, string> { ["app_save"] = "F5", ["app_card"] = "F6", ["app_list"] = "F7" }, 230,
@@ -267,6 +282,40 @@ namespace KsfCompanion
             }).ToList();
             maps.Insert(0, current);
             return maps;
+        }
+
+        /// <summary>Your records on the sample maps: some world records and top 10s, groups, maps with bonuses left, maps not done.</summary>
+        static List<MapRecord> Records(DateTime now, MapInfo current)
+        {
+            var list = new List<MapRecord>();
+            foreach (var map in Catalog(now, current))
+            {
+                var i = list.Count;
+                var staged = !map.IsLinear;
+                var record = new MapRecord
+                {
+                    Map = map.Name,
+                    Tier = map.Tier,
+                    IsLinear = map.IsLinear,
+                    StageCount = staged ? map.StageCount : 4,
+                    BonusCount = map.BonusCount,
+                    Stages = staged ? Enumerable.Range(0, map.StageCount).Select(z => (z + i) % 4 != 3 || i % 5 == 0).ToArray() : new bool[0],
+                    Bonuses = Enumerable.Range(0, map.BonusCount).Select(b => (b + i) % 3 != 2).ToArray(),
+                };
+                if (i % 4 != 3)
+                {
+                    record.Time = 41.3 + i * 13.917;
+                    record.WrDiff = i % 7 == 0 ? 0 : 0.412 + i * 0.731;
+                    record.Rank = i % 7 == 0 ? 1 : i % 5 == 1 ? 3 + i % 7 : (int?)null;
+                    record.Group = record.Rank == null ? 1 + i % 6 : (int?)null;
+                    record.Points = record.Rank == 1 ? 1580.4 : record.Rank != null ? 640 - i * 3 : 220 - i * 6.5;
+                    record.Completions = 1 + i * 7 % 40;
+                    record.Date = now.AddDays(-(i * 9 % 70)).AddHours(-3);
+                    if (staged && i % 5 == 0) record.Stages = record.Stages.Select(_ => true).ToArray();
+                }
+                list.Add(record);
+            }
+            return list;
         }
 
         /// <summary>A made-up map picture: a dusky sky and two surf ramps, in a colour of its own for each seed.</summary>

@@ -1093,7 +1093,7 @@ namespace KsfCompanion.Ui
         }
 
         // ----- nominate page: all of KSF's maps to search, filter and nominate, plus rock the vote -----
-        const int MapsPerPage = 60, ThumbsKept = 300;
+        const int MapsPerPage = 60;
         string page = "dashboard", mapSearch = "", mapSort = "popular", mapView = "tiles", mapDone = "all", mapKind = "all", mapStatus = "";
         double tileSize = 280;
         int mapTier, mapsShown = MapsPerPage, mapsMatching;
@@ -1103,13 +1103,13 @@ namespace KsfCompanion.Ui
         // The maps you've finished (on the tick and style on show), by name.
         IReadOnlyDictionary<string, FinishedMap> finishedMaps = new Dictionary<string, FinishedMap>();
         string playingMap;
-        // Pictures already loaded, so searching and filtering don't load them again (the oldest go first).
-        readonly Dictionary<string, Bitmap> mapThumbs = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
-        readonly Queue<string> mapThumbOrder = new Queue<string>();
+        // Pictures already loaded, so searching and filtering don't load them again (the records page uses them too).
+        readonly MapThumbs mapThumbs = new MapThumbs();
 
         public DashboardViewModel()
         {
-            ShowPageCommand = new RelayCommand(p => Page = p as string == "nominate" || p as string == "binds" ? (string)p : "dashboard");
+            ShowPageCommand = new RelayCommand(p => Page = p as string == "nominate" || p as string == "records" || p as string == "binds" ? (string)p : "dashboard");
+            Records = new RecordsViewModel(mapThumbs);
             SetMapTierCommand = new RelayCommand(p => MapTier = int.TryParse(p as string, out var tier) ? tier : 0);
             SetMapSortCommand = new RelayCommand(p => MapSort = p as string ?? "popular");
             SetMapViewCommand = new RelayCommand(p => MapView = p as string == "list" ? "list" : "tiles");
@@ -1157,12 +1157,16 @@ namespace KsfCompanion.Ui
                 if (!Set(ref page, value)) return;
                 Raise(nameof(IsDashboardPage));
                 Raise(nameof(IsNominatePage));
+                Raise(nameof(IsRecordsPage));
                 Raise(nameof(IsBindsPage));
                 if (page != "binds") Binds.CancelCapture();
             }
         }
-        public bool IsDashboardPage => page != "nominate" && page != "binds";
+        public bool IsDashboardPage => page != "nominate" && page != "records" && page != "binds";
         public bool IsNominatePage => page == "nominate";
+        public bool IsRecordsPage => page == "records";
+        /// <summary>The records page: every KSF map with your record on it, like your records page on ksf.surf.</summary>
+        public RecordsViewModel Records { get; }
         public bool IsBindsPage => page == "binds";
         /// <summary>The binds page: KSF commands and turning on keys.</summary>
         public BindsViewModel Binds { get; } = new BindsViewModel();
@@ -1281,6 +1285,7 @@ namespace KsfCompanion.Ui
         /// <summary>Your play-later maps (listed first, with a filled star) and the map you're on.</summary>
         public void SetMapsContext(ICollection<string> saved, string currentMap)
         {
+            Records.SetContext(saved, currentMap);
             savedMapSet = new HashSet<string>(saved, StringComparer.OrdinalIgnoreCase);
             if (!string.Equals(playingMap, currentMap, StringComparison.OrdinalIgnoreCase))
             {
@@ -1311,12 +1316,7 @@ namespace KsfCompanion.Ui
         public void SetMapThumb(MapResultRow row, Bitmap thumb)
         {
             if (thumb == null) return;
-            if (!mapThumbs.ContainsKey(row.Map))
-            {
-                mapThumbOrder.Enqueue(row.Map);
-                while (mapThumbOrder.Count > ThumbsKept) mapThumbs.Remove(mapThumbOrder.Dequeue());
-            }
-            mapThumbs[row.Map] = thumb;
+            mapThumbs.Put(row.Map, thumb);
             row.Thumb = thumb;
             // The list may have been rebuilt (search, filter) while the picture loaded.
             foreach (var shown in MapResults.Where(r => r != row && r.Thumb == null && string.Equals(r.Map, row.Map, StringComparison.OrdinalIgnoreCase)))
@@ -1435,7 +1435,7 @@ namespace KsfCompanion.Ui
             Mappers = string.IsNullOrEmpty(m.Mappers) ? "" : "by " + m.Mappers,
             IsCurrent = string.Equals(m.Name, playingMap, StringComparison.OrdinalIgnoreCase),
             IsSaved = savedMapSet.Contains(m.Name),
-            Thumb = mapThumbs.TryGetValue(m.Name, out var thumb) ? thumb : null,
+            Thumb = mapThumbs.Get(m.Name),
         };
 
         // ----- leaderboard: the map's, or one stage's / bonus's. Which one is Companion's call (where you are, or your pick). -----
@@ -1780,7 +1780,7 @@ namespace KsfCompanion.Ui
 
         public static IBrush TierColor(int tier) => Frozen(TierColors[Math.Max(0, Math.Min(TierColors.Length - 1, tier))]);
 
-        static IBrush TierSoft(int tier) => Frozen("#24" + TierColors[Math.Max(0, Math.Min(TierColors.Length - 1, tier))].Substring(1));
+        internal static IBrush TierSoft(int tier) => Frozen("#24" + TierColors[Math.Max(0, Math.Min(TierColors.Length - 1, tier))].Substring(1));
 
         static string TopPercent(int rank, int total)
         {

@@ -214,6 +214,126 @@
             </Panel>
         </DataTemplate>
 
+        <!-- Records page, tiles: the map's picture with your time and rank on it, then which stages and bonuses you've done. -->
+        <DataTemplate x:Key="RecordTileTemplate">
+            <Panel Classes="mapTile" Classes.current="{Binding IsCurrent}" Background="Transparent">
+                <Border CornerRadius="12" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" />
+                <Border Classes="hover" CornerRadius="12" Background="#0AFFFFFF" />
+                <Border CornerRadius="12" BorderBrush="#88FF7A1A" BorderThickness="1" IsVisible="{Binding IsCurrent}" />
+                <StackPanel>
+                    <ui:AspectBox Ratio="0.56" Margin="1,1,1,0">
+                        <Panel>
+                            <Border CornerRadius="11,11,0,0" Background="{StaticResource Bg3Brush}" />
+                            <Border CornerRadius="11,11,0,0" Opacity="{Binding ThumbOpacity}">
+                                <Border.Background>
+                                    <ImageBrush Source="{Binding Thumb}" Stretch="UniformToFill" />
+                                </Border.Background>
+                            </Border>
+                            <Border CornerRadius="11,11,0,0">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+                                        <GradientStop Color="#00000000" Offset="0.45" />
+                                        <GradientStop Color="#B8000000" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                            </Border>
+                            <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8" CornerRadius="5" Background="#D90B0B0F" Padding="6,1">
+                                <TextBlock Text="{Binding TierText}" Foreground="{Binding TierBrush}" FontFamily="{StaticResource DisplayFont}" FontSize="11.5" FontWeight="SemiBold" />
+                            </Border>
+                            <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8" CornerRadius="5" Background="#D90B0B0F" Padding="7,1"
+                                    IsVisible="{Binding HasRank}" ToolTip.Tip="{Binding RankTip}">
+                                <TextBlock Text="{Binding Rank}" Foreground="{Binding RankBrush}" FontFamily="{StaticResource DisplayFont}" FontSize="11.5" FontWeight="Bold" />
+                            </Border>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="11,0,0,8" IsVisible="{Binding IsDone}">
+                                <TextBlock Text="{Binding Time}" FontFamily="{StaticResource DisplayFont}" FontSize="17" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding WrDiff}" Foreground="{StaticResource Text1Brush}" FontFamily="{StaticResource DisplayFont}" FontSize="12"
+                                           Margin="8,0,0,2" VerticalAlignment="Bottom" />
+                            </StackPanel>
+                            <Border HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="8,0,0,8" CornerRadius="5" Background="#D90B0B0F" Padding="6,1"
+                                    IsVisible="{Binding !IsDone}">
+                                <TextBlock Text="NOT DONE" Foreground="{StaticResource Text1Brush}" FontFamily="{StaticResource DisplayFont}" FontSize="11" FontWeight="SemiBold" />
+                            </Border>
+                        </Panel>
+                    </ui:AspectBox>
+                    <StackPanel Margin="12,9,12,12">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="6,-3,-6,0" VerticalAlignment="Top">
+                                <Button Theme="{StaticResource IconButton}" ToolTip.Tip="{Binding SaveTip}"
+                                        Command="{Binding $parent[Window].DataContext.ToggleSavedCommand}" CommandParameter="{Binding Map}">
+                                    <ui:Icon Data="{StaticResource IconStar}" Width="13" Height="13" Classes.saved="{Binding IsSaved}" />
+                                </Button>
+                                <Button Theme="{StaticResource IconButton}" ToolTip.Tip="Open on ksf.surf"
+                                        Command="{Binding $parent[Window].DataContext.OpenLaterCommand}" CommandParameter="{Binding Map}">
+                                    <ui:Icon Data="{StaticResource IconExternal}" Width="13" Height="13" />
+                                </Button>
+                            </StackPanel>
+                            <TextBlock Text="{Binding Map}" FontFamily="{StaticResource DisplayFont}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        </DockPanel>
+                        <TextBlock Classes="muted" Text="{Binding Kind}" FontSize="11.5" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Summary}" Foreground="{StaticResource Text1Brush}" FontSize="11.5" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
+                        <!-- Like ksf.surf's zones: the stages (on a linear map, the map), then the bonuses. -->
+                        <StackPanel Margin="0,10,0,0" Background="Transparent" ToolTip.Tip="{Binding ZonesTip}" ToolTip.ShowDelay="300">
+                            <ui:ZoneBar Pattern="{Binding StagePattern}" Height="5" />
+                            <ui:ZoneBar Pattern="{Binding BonusPattern}" Height="5" Margin="0,3,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Panel>
+        </DataTemplate>
+
+        <!-- Records page, list view: ksf.surf's table with each map's picture. The columns match the header in the page. -->
+        <DataTemplate x:Key="RecordListTemplate">
+            <Panel Classes="mapRow" Margin="0,0,0,3" Background="Transparent">
+                <Border Classes="hover" CornerRadius="9" Background="#0CFFFFFF" />
+                <Border Classes="row" Classes.here="{Binding IsCurrent}" />
+                <Grid Margin="7,6" ColumnDefinitions="Auto,*,46,94,84,62,66,58,104,150,64">
+                    <Panel Width="{Binding $parent[Window].DataContext.ListThumbWidth}" Height="{Binding $parent[Window].DataContext.ListThumbHeight}">
+                        <Border CornerRadius="7" Background="{StaticResource Bg3Brush}" />
+                        <Border CornerRadius="7" Opacity="{Binding ThumbOpacity}">
+                            <Border.Background>
+                                <ImageBrush Source="{Binding Thumb}" Stretch="UniformToFill" />
+                            </Border.Background>
+                        </Border>
+                    </Panel>
+                    <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding Map}" FontFamily="{StaticResource DisplayFont}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="playing now" Foreground="{StaticResource AccentBrush}" FontSize="11.5" Margin="10,0,0,0" VerticalAlignment="Center"
+                                       IsVisible="{Binding IsCurrent}" />
+                        </StackPanel>
+                        <TextBlock Classes="muted" Text="{Binding Kind}" FontSize="11.5" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <Border Grid.Column="2" CornerRadius="5" Padding="6,1" Background="{Binding TierSoftBrush}" HorizontalAlignment="Left" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding TierText}" Foreground="{Binding TierBrush}" FontSize="11.5" FontWeight="SemiBold" FontFamily="{StaticResource DisplayFont}" />
+                    </Border>
+                    <TextBlock Grid.Column="3" Classes="numbers" Text="{Binding Time}" FontSize="13" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="3" Classes="muted" Text="not done" FontSize="12" VerticalAlignment="Center" IsVisible="{Binding !IsDone}" />
+                    <TextBlock Grid.Column="4" Classes="numbers" Text="{Binding WrDiff}" Foreground="{StaticResource Text1Brush}" FontSize="12.5" VerticalAlignment="Center" />
+                    <Border Grid.Column="5" CornerRadius="5" Padding="6,1" Background="{Binding RankSoftBrush}" HorizontalAlignment="Left" VerticalAlignment="Center"
+                            IsVisible="{Binding HasRank}" ToolTip.Tip="{Binding RankTip}">
+                        <TextBlock Text="{Binding Rank}" Foreground="{Binding RankBrush}" FontSize="11.5" FontWeight="Bold" FontFamily="{StaticResource DisplayFont}" />
+                    </Border>
+                    <TextBlock Grid.Column="6" Classes="numbers" Text="{Binding Points}" FontSize="12.5" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="7" Classes="numbers" Text="{Binding Completions}" Foreground="{StaticResource Text1Brush}" FontSize="12.5" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="8" Text="{Binding Date}" Foreground="{StaticResource Text1Brush}" FontSize="12" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="9" VerticalAlignment="Center" Margin="0,0,12,0" Background="Transparent" ToolTip.Tip="{Binding ZonesTip}" ToolTip.ShowDelay="300">
+                        <ui:ZoneBar Pattern="{Binding StagePattern}" Height="5" />
+                        <ui:ZoneBar Pattern="{Binding BonusPattern}" Height="5" Margin="0,3,0,0" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="10" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
+                        <Button Theme="{StaticResource IconButton}" ToolTip.Tip="{Binding SaveTip}"
+                                Command="{Binding $parent[Window].DataContext.ToggleSavedCommand}" CommandParameter="{Binding Map}">
+                            <ui:Icon Data="{StaticResource IconStar}" Width="13" Height="13" Classes.saved="{Binding IsSaved}" />
+                        </Button>
+                        <Button Theme="{StaticResource IconButton}" ToolTip.Tip="Open on ksf.surf"
+                                Command="{Binding $parent[Window].DataContext.OpenLaterCommand}" CommandParameter="{Binding Map}">
+                            <ui:Icon Data="{StaticResource IconExternal}" Width="13" Height="13" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Panel>
+        </DataTemplate>
+
         <DataTemplate x:Key="BindRowTemplate">
             <Panel Classes="bindRow" Margin="-8,0,-8,2" Background="Transparent">
                 <Border Classes="hover" CornerRadius="9" Background="#0AFFFFFF" />
@@ -284,6 +404,23 @@
                     <DoubleTransition Property="Opacity" Duration="0:0:0.18" />
                 </Transitions>
             </Setter>
+        </Style>
+        <!-- The records list's column headers: click one to sort by it. -->
+        <Style Selector="Button.colHead">
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.colHead TextBlock, TextBlock.colHeadText">
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="LetterSpacing" Value="0.6" />
+            <Setter Property="Foreground" Value="{StaticResource Text2Brush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.colHead:pointerover TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Text1Brush}" />
+        </Style>
+        <Style Selector="Button.colHead.selected TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
         </Style>
         <Style Selector="Button.zoneRow:pointerover Border.hover, Panel.mapTile:pointerover Border.hover, Panel.mapRow:pointerover Border.hover,
                          Panel.bindRow:pointerover Border.hover, Panel.laterRow:pointerover Border.hover, Panel.serverRow:pointerover Border.hover">
@@ -448,6 +585,7 @@
                     <StackPanel Orientation="Horizontal" Margin="18,0,0,0">
                         <Button Theme="{StaticResource TabButton}" Content="Dashboard" Command="{Binding ShowPageCommand}" CommandParameter="dashboard" Classes.selected="{Binding IsDashboardPage}" />
                         <Button Theme="{StaticResource TabButton}" Content="Nominate" Command="{Binding ShowPageCommand}" CommandParameter="nominate" Classes.selected="{Binding IsNominatePage}" />
+                        <Button Theme="{StaticResource TabButton}" Content="Records" Command="{Binding ShowPageCommand}" CommandParameter="records" Classes.selected="{Binding IsRecordsPage}" />
                         <Button Theme="{StaticResource TabButton}" Content="Binds" Command="{Binding ShowPageCommand}" CommandParameter="binds" Classes.selected="{Binding IsBindsPage}" />
                     </StackPanel>
                 </StackPanel>
@@ -675,6 +813,202 @@
                             </Border>
                             <Button Theme="{StaticResource GhostButton}" HorizontalAlignment="Center" Margin="0,2,0,0" Command="{Binding ShowMoreMapsCommand}"
                                     IsVisible="{Binding HasMoreMaps}" Content="Show more maps" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </LayoutTransformControl>
+
+            <!-- ============ Records page: every KSF map with your record on it, like your records page on ksf.surf - with the pictures ============ -->
+            <LayoutTransformControl x:Name="RecordsZoom" Grid.Row="2" IsVisible="{Binding IsRecordsPage}">
+                <Grid x:Name="RecordsPage" Margin="20,6,20,8" RowDefinitions="Auto,*" DataContext="{Binding Records}">
+
+                    <Border Classes="card" Padding="18,14,18,12">
+                        <StackPanel>
+                            <DockPanel>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Classes="muted" Text="{Binding Updated}" FontSize="11.5" VerticalAlignment="Center" Margin="0,0,12,0" />
+                                    <Button Theme="{StaticResource GhostButton}" Padding="12,7" Command="{Binding RefreshCommand}"
+                                            ToolTip.Tip="Read your records from ksf.surf again" ToolTip.ShowDelay="500">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:Icon Data="{StaticResource IconVote}" Width="12" Height="12" StrokeWidth="2.4" />
+                                            <TextBlock Text="Refresh" FontSize="12" Margin="7,0,0,0" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Classes="filterLabel" Text="YOUR RECORDS" Margin="0,0,12,0" />
+                                    <TextBlock Text="{Binding Heading}" FontFamily="{StaticResource DisplayFont}" FontSize="19" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </DockPanel>
+                            <Border Height="1" Background="{StaticResource LineBrush}" Margin="-18,14,-18,14" />
+
+                            <DockPanel>
+                                <Border DockPanel.Dock="Right" Margin="12,0,0,0" CornerRadius="7" Background="{StaticResource Bg2Brush}" Padding="2" VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Theme="{StaticResource SegmentButton}" Command="{Binding SetViewCommand}" CommandParameter="tiles" Classes.selected="{Binding IsTileView}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:Icon Data="{StaticResource IconTiles}" Width="12" Height="12" />
+                                                <TextBlock Text="Tiles" Margin="6,0,0,0" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Theme="{StaticResource SegmentButton}" Command="{Binding SetViewCommand}" CommandParameter="list" Classes.selected="{Binding IsListView}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:Icon Data="{StaticResource IconList}" Width="12" Height="12" />
+                                                <TextBlock Text="List" Margin="6,0,0,0" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </Border>
+                                <!-- The same size as the nominate page's tiles. -->
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="18,0,6,0" VerticalAlignment="Center" Background="Transparent"
+                                            ToolTip.Tip="Tile size" ToolTip.ShowDelay="500">
+                                    <ui:Icon Data="{StaticResource IconZoomOut}" Width="13" Height="13" Foreground="{StaticResource Text2Brush}" />
+                                    <Slider Theme="{StaticResource SizeSlider}" Width="130" Minimum="200" Maximum="460" Margin="9,0" VerticalAlignment="Center"
+                                            Value="{Binding $parent[Window].DataContext.TileSize, Mode=TwoWay}" SmallChange="20" LargeChange="40" />
+                                    <ui:Icon Data="{StaticResource IconZoomIn}" Width="15" Height="15" Foreground="{StaticResource Text2Brush}" />
+                                </StackPanel>
+                                <TextBox x:Name="RecordSearchBox" Classes="search" Watermark="Search your maps or mappers..."
+                                         Text="{Binding Search, Mode=TwoWay, Delay=150}">
+                                    <TextBox.InnerLeftContent>
+                                        <ui:Icon Data="{StaticResource IconSearch}" Width="15" Height="15" Foreground="{StaticResource Text2Brush}" Margin="12,0,2,0" />
+                                    </TextBox.InnerLeftContent>
+                                    <TextBox.InnerRightContent>
+                                        <Button Theme="{StaticResource IconButton}" Width="26" Height="26" Margin="0,0,5,0"
+                                                Command="{Binding ClearSearchCommand}" IsVisible="{Binding HasSearch}">
+                                            <ui:Icon Data="{StaticResource IconClose}" Width="11" Height="11" />
+                                        </Button>
+                                    </TextBox.InnerRightContent>
+                                </TextBox>
+                            </DockPanel>
+                            <DockPanel Margin="0,12,0,0">
+                                <TextBlock DockPanel.Dock="Right" Classes="muted" Text="{Binding Status}" FontSize="11.5" Margin="12,0,0,6" VerticalAlignment="Bottom" />
+                                <WrapPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,20,6">
+                                        <TextBlock Classes="filterLabel" Text="TICK" Margin="0,0,8,0" />
+                                        <Border CornerRadius="7" Background="{StaticResource Bg2Brush}" Padding="2"
+                                                ToolTip.Tip="Your 66 tick or 100 tick records (KSF keeps them apart) - the same as on the nominate page" ToolTip.ShowDelay="700">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Button Theme="{StaticResource SegmentButton}" Content="66T" Command="{Binding $parent[Window].DataContext.NominateTickCommand}" CommandParameter="css"
+                                                        Classes.selected="{Binding $parent[Window].DataContext.NominateTick, Converter={StaticResource Eq}, ConverterParameter=css}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="100T" Command="{Binding $parent[Window].DataContext.NominateTickCommand}" CommandParameter="css100t"
+                                                        Classes.selected="{Binding $parent[Window].DataContext.NominateTick, Converter={StaticResource Eq}, ConverterParameter=css100t}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,20,6">
+                                        <TextBlock Classes="filterLabel" Text="SHOW" Margin="0,0,8,0" />
+                                        <Border CornerRadius="7" Background="{StaticResource Bg2Brush}" Padding="2"
+                                                ToolTip.Tip="Maps you've finished, the ones you haven't, or the ones you've finished with stages or bonuses still to do" ToolTip.ShowDelay="700">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Button Theme="{StaticResource SegmentButton}" Content="All" Command="{Binding SetShowCommand}" CommandParameter="all" Classes.selected="{Binding Show, Converter={StaticResource Eq}, ConverterParameter=all}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="Done" Command="{Binding SetShowCommand}" CommandParameter="done" Classes.selected="{Binding Show, Converter={StaticResource Eq}, ConverterParameter=done}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="Not done" Command="{Binding SetShowCommand}" CommandParameter="todo" Classes.selected="{Binding Show, Converter={StaticResource Eq}, ConverterParameter=todo}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="Zones left" Command="{Binding SetShowCommand}" CommandParameter="zones" Classes.selected="{Binding Show, Converter={StaticResource Eq}, ConverterParameter=zones}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,20,6">
+                                        <TextBlock Classes="filterLabel" Text="TIER" Margin="0,0,8,0" />
+                                        <Border CornerRadius="7" Background="{StaticResource Bg2Brush}" Padding="2">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Button Theme="{StaticResource SegmentButton}" Content="All" Command="{Binding SetTierCommand}" CommandParameter="0" Classes.selected="{Binding Tier, Converter={StaticResource Eq}, ConverterParameter=0}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="T1" Command="{Binding SetTierCommand}" CommandParameter="1" Classes.selected="{Binding Tier, Converter={StaticResource Eq}, ConverterParameter=1}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="T2" Command="{Binding SetTierCommand}" CommandParameter="2" Classes.selected="{Binding Tier, Converter={StaticResource Eq}, ConverterParameter=2}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="T3" Command="{Binding SetTierCommand}" CommandParameter="3" Classes.selected="{Binding Tier, Converter={StaticResource Eq}, ConverterParameter=3}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="T4" Command="{Binding SetTierCommand}" CommandParameter="4" Classes.selected="{Binding Tier, Converter={StaticResource Eq}, ConverterParameter=4}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="T5" Command="{Binding SetTierCommand}" CommandParameter="5" Classes.selected="{Binding Tier, Converter={StaticResource Eq}, ConverterParameter=5}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="T6" Command="{Binding SetTierCommand}" CommandParameter="6" Classes.selected="{Binding Tier, Converter={StaticResource Eq}, ConverterParameter=6}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="T7" Command="{Binding SetTierCommand}" CommandParameter="7" Classes.selected="{Binding Tier, Converter={StaticResource Eq}, ConverterParameter=7}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="T8" Command="{Binding SetTierCommand}" CommandParameter="8" Classes.selected="{Binding Tier, Converter={StaticResource Eq}, ConverterParameter=8}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,20,6">
+                                        <TextBlock Classes="filterLabel" Text="TYPE" Margin="0,0,8,0" />
+                                        <Border CornerRadius="7" Background="{StaticResource Bg2Brush}" Padding="2">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Button Theme="{StaticResource SegmentButton}" Content="Any" Command="{Binding SetKindCommand}" CommandParameter="all" Classes.selected="{Binding Kind, Converter={StaticResource Eq}, ConverterParameter=all}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="Linear" Command="{Binding SetKindCommand}" CommandParameter="linear" Classes.selected="{Binding Kind, Converter={StaticResource Eq}, ConverterParameter=linear}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="Staged" Command="{Binding SetKindCommand}" CommandParameter="staged" Classes.selected="{Binding Kind, Converter={StaticResource Eq}, ConverterParameter=staged}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,20,6">
+                                        <TextBlock Classes="filterLabel" Text="SORT" Margin="0,0,8,0" />
+                                        <Border CornerRadius="7" Background="{StaticResource Bg2Brush}" Padding="2">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Button Theme="{StaticResource SegmentButton}" Content="Points" Command="{Binding SetSortCommand}" CommandParameter="points" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=points}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="Rank" Command="{Binding SetSortCommand}" CommandParameter="rank" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=rank}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="Time" Command="{Binding SetSortCommand}" CommandParameter="time" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=time}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="WR diff" Command="{Binding SetSortCommand}" CommandParameter="wrdiff" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=wrdiff}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="Completions" Command="{Binding SetSortCommand}" CommandParameter="completions" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=completions}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="Date" Command="{Binding SetSortCommand}" CommandParameter="date" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=date}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="Tier" Command="{Binding SetSortCommand}" CommandParameter="tier" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=tier}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="A-Z" Command="{Binding SetSortCommand}" CommandParameter="name" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=name}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                </WrapPanel>
+                            </DockPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                        <StackPanel Margin="0,0,0,8">
+                            <TextBlock Classes="muted" Text="{Binding Notice}" IsVisible="{Binding HasNotice}" HorizontalAlignment="Center" TextAlignment="Center"
+                                       TextWrapping="Wrap" MaxWidth="560" FontSize="13" Margin="0,48,0,0" />
+                            <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource RecordTileTemplate}" Focusable="False" Margin="0,0,0,16"
+                                          IsVisible="{Binding IsTileView}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <ui:TilePanel MinItemWidth="{Binding $parent[Window].DataContext.TileSize}" Spacing="16" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                            <Border Classes="card" Padding="10" IsVisible="{Binding IsListView}">
+                                <StackPanel>
+                                    <!-- ksf.surf's columns: click one to sort by it. -->
+                                    <Grid Margin="7,2,7,8" ColumnDefinitions="Auto,*,46,94,84,62,66,58,104,150,64" IsVisible="{Binding HasRows}">
+                                        <Panel Width="{Binding $parent[Window].DataContext.ListThumbWidth}" />
+                                    <Button Grid.Column="1" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=name}"
+                                            Command="{Binding SetSortCommand}" CommandParameter="name" HorizontalAlignment="Left" Margin="12,0,0,0">
+                                        <TextBlock Text="MAP" />
+                                    </Button>
+                                    <Button Grid.Column="2" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=tier}"
+                                            Command="{Binding SetSortCommand}" CommandParameter="tier" HorizontalAlignment="Left">
+                                        <TextBlock Text="TIER" />
+                                    </Button>
+                                    <Button Grid.Column="3" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=time}"
+                                            Command="{Binding SetSortCommand}" CommandParameter="time" HorizontalAlignment="Left">
+                                        <TextBlock Text="TIME" />
+                                    </Button>
+                                    <Button Grid.Column="4" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=wrdiff}"
+                                            Command="{Binding SetSortCommand}" CommandParameter="wrdiff" HorizontalAlignment="Left">
+                                        <TextBlock Text="WR DIFF" />
+                                    </Button>
+                                    <Button Grid.Column="5" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=rank}"
+                                            Command="{Binding SetSortCommand}" CommandParameter="rank" HorizontalAlignment="Left">
+                                        <TextBlock Text="RANK" />
+                                    </Button>
+                                    <Button Grid.Column="6" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=points}"
+                                            Command="{Binding SetSortCommand}" CommandParameter="points" HorizontalAlignment="Left">
+                                        <TextBlock Text="POINTS" />
+                                    </Button>
+                                    <Button Grid.Column="7" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=completions}"
+                                            Command="{Binding SetSortCommand}" CommandParameter="completions" HorizontalAlignment="Left" ToolTip.Tip="Completions">
+                                        <TextBlock Text="DONE" />
+                                    </Button>
+                                    <Button Grid.Column="8" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=date}"
+                                            Command="{Binding SetSortCommand}" CommandParameter="date" HorizontalAlignment="Left">
+                                        <TextBlock Text="DATE" />
+                                    </Button>
+                                        <TextBlock Grid.Column="9" Classes="colHeadText" Text="ZONES" ToolTip.Tip="Stages (on a linear map, the map itself), then bonuses: green = done" />
+                                    </Grid>
+                                    <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource RecordListTemplate}" Focusable="False" />
+                                </StackPanel>
+                            </Border>
+                            <Button Theme="{StaticResource GhostButton}" HorizontalAlignment="Center" Margin="0,2,0,0" Command="{Binding ShowMoreCommand}"
+                                    IsVisible="{Binding HasMore}" Content="Show more maps" />
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>

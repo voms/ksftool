@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -44,6 +45,7 @@ namespace KsfCompanion
                 Section("groups", () => Groups());
                 Section("leaving a server", () => Leaving());
                 Section("private servers", () => PrivateServers());
+                Section("records page", () => RecordsPage());
                 Section("game config", () => Config(root));
                 Section("rcon", () => Rcon(root));
                 Section("open files", () => Open(root));
@@ -317,6 +319,73 @@ namespace KsfCompanion
             var quietRow = vm.Servers.First(r => r.Address == quiet.Address);
             Check("a private server that doesn't say who's on it", quietRow.PlayersNote == "it doesn't say who's on it" && quietRow.Tier == "T?" && quietRow.Kind == "private server",
                 $"{quietRow.PlayersNote} / {quietRow.Tier} / {quietRow.Kind}");
+        }
+
+        /// <summary>
+        /// Your records page on ksf.surf, as it sends its list (October 2026): every map, in Next.js's stream of JSON
+        /// strings - a map can be cut in two between them.
+        /// </summary>
+        static void RecordsPage()
+        {
+            var data = "26:[\"$\",\"$L27\",null,{\"data\":["
+                + "{\"mapName\":\"surf_ambient_njv\",\"isLinear\":true,\"zoneID\":0,\"tier\":4,\"cp_count\":5,\"b_count\":0,\"time\":null,\"wrDiff\":null,\"count\":null,\"date\":null,\"points\":null,\"rank\":null,\"stages\":[],\"bonuses\":[]},"
+                + "{\"mapName\":\"surf_andromeda\",\"isLinear\":true,\"zoneID\":0,\"tier\":1,\"cp_count\":3,\"b_count\":1,\"time\":31.709295,\"wrDiff\":0.7605400000000024,\"count\":10,\"date\":1678654180,\"points\":259.75,\"rank\":\"g1\",\"stages\":[],\"bonuses\":[true]},"
+                + "{\"mapName\":\"surf_anoobis\",\"isLinear\":false,\"zoneID\":0,\"tier\":2,\"cp_count\":3,\"b_count\":2,\"time\":41.0672492980957,\"wrDiff\":0,\"count\":72,\"date\":1785719238,\"points\":3152.895065307617,\"rank\":\"1\",\"stages\":[true,true,true],\"bonuses\":[true,false]},"
+                + "{\"mapName\":\"surf_anoobis\",\"isLinear\":false,\"zoneID\":2,\"tier\":2,\"cp_count\":3,\"b_count\":2,\"time\":9.5,\"wrDiff\":0.1,\"count\":5,\"date\":1785719238,\"points\":10,\"rank\":\"3\",\"stages\":[],\"bonuses\":[]},"
+                + "{\"mapName\":\"surf_chasm\",\"isLinear\":true,\"zoneID\":0,\"tier\":4,\"cp_count\":5,\"b_count\":4,\"time\":null,\"wrDiff\":null,\"count\":null,\"date\":null,\"points\":null,\"rank\":null,\"stages\":[],\"bonuses\":[true,false,false,true]},"
+                + "{\"mapName\":\"surf_yolo\",\"isLinear\":false,\"zoneID\":0,\"tier\":5,\"cp_count\":5,\"b_count\":1,\"time\":233.849029,\"wrDiff\":140.391724,\"count\":1,\"date\":1775940619,\"points\":61.5,\"rank\":\"6\",\"stages\":[true,true,true,true,true],\"bonuses\":[true]},"
+                + "{\"mapName\":\"surf_anoobis\",\"isLinear\":false,\"zoneID\":0,\"tier\":2,\"cp_count\":3,\"b_count\":2,\"time\":99,\"wrDiff\":9,\"count\":1,\"date\":1,\"points\":1,\"rank\":\"9\",\"stages\":[],\"bonuses\":[]}"
+                + "]}]\n";
+            var cut = data.IndexOf("surf_chasm", StringComparison.Ordinal) + 4;
+            string Piece(string text) => "<script>self.__next_f.push([1," + JsonSerializer.Serialize(text) + "])</script>";
+            var html = "<html><body><a href=\"/maps/surf_anoobis\">surf_anoobis</a>" + Piece("0:{\"P\":null,\"b\":\"x\"}\n")
+                       + Piece(data.Substring(0, cut)) + Piece(data.Substring(cut)) + "<span>1<!-- --> - <!-- -->18<!-- --> of <!-- -->953</span></body></html>";
+            var records = KsfApi.ParseRecordsPage(html);
+            Check("every map once, in the page's order (a stage's record isn't a map's)", records.Select(r => r.Map).SequenceEqual(new[] { "surf_ambient_njv", "surf_andromeda", "surf_anoobis", "surf_chasm", "surf_yolo" }),
+                string.Join(", ", records.Select(r => r.Map)));
+            var anoobis = records.FirstOrDefault(r => r.Map == "surf_anoobis");
+            var andromeda = records.FirstOrDefault(r => r.Map == "surf_andromeda");
+            var chasm = records.FirstOrDefault(r => r.Map == "surf_chasm");
+            Check("a world record", anoobis != null && anoobis.IsDone && anoobis.Rank == 1 && anoobis.Group == null && Math.Abs(anoobis.Time.Value - 41.0672) < 0.001 && anoobis.WrDiff == 0
+                && anoobis.Completions == 72 && Math.Abs(anoobis.Points.Value - 3152.895) < 0.001 && anoobis.Tier == 2 && !anoobis.IsLinear && anoobis.StageCount == 3 && anoobis.BonusCount == 2
+                && anoobis.Stages.SequenceEqual(new[] { true, true, true }) && anoobis.Bonuses.SequenceEqual(new[] { true, false })
+                && anoobis.Date == DateTimeOffset.FromUnixTimeSeconds(1785719238).LocalDateTime);
+            Check("a group, on a linear map", andromeda != null && andromeda.Group == 1 && andromeda.Rank == null && andromeda.IsLinear && andromeda.Stages.Length == 0 && andromeda.Bonuses.SequenceEqual(new[] { true }));
+            Check("a map not done, a bonus or two done", chasm != null && !chasm.IsDone && chasm.Rank == null && chasm.Points == null && chasm.Bonuses.SequenceEqual(new[] { true, false, false, true }));
+            Check("a page without the list", KsfApi.ParseRecordsPage("<html><body>nothing here</body></html>").Count == 0);
+
+            // The page: ksf.surf's order (points), what each map says, the filters.
+            var page = new RecordsViewModel(new MapThumbs());
+            page.SetRecords(records, "you  ·  66T", null, loading: false);
+            string Order() => string.Join(" ", page.Rows.Select(r => r.Map.Substring(5)));
+            Check("by points: your best first, then the maps not done", Order() == "anoobis andromeda yolo ambient_njv chasm", Order());
+            page.Sort = "rank";
+            Check("by rank: places in the top 10, then groups", Order() == "anoobis yolo andromeda ambient_njv chasm", Order());
+            page.Sort = "wrdiff";
+            Check("by the gap to the record", Order() == "anoobis andromeda yolo ambient_njv chasm", Order());
+            page.Sort = "points";
+            var wr = page.Rows[0];
+            var group = page.Rows[1];
+            var place = page.Rows[2];
+            var notDone = page.Rows[4];
+            Check("a world record's row", wr.Rank == "WR" && wr.WrDiff == "WR" && wr.Time == "0:41.067" && wr.Points == "3,153" && wr.Completions == "72"
+                && wr.StagePattern == "111" && wr.BonusPattern == "10", $"{wr.Rank} {wr.WrDiff} {wr.Time} {wr.Points} {wr.StagePattern} {wr.BonusPattern}");
+            Check("a group's and a place's", group.Rank == "G1" && group.WrDiff == "+0.760" && group.StagePattern == "1" && place.Rank == "#6" && place.WrDiff == "+2:20.391",
+                $"{group.Rank} {group.WrDiff} {group.StagePattern} / {place.Rank} {place.WrDiff}");
+            Check("a map not done", !notDone.IsDone && notDone.Time == "" && notDone.Rank == "" && notDone.StagePattern == "0" && notDone.BonusPattern == "1001"
+                && notDone.Summary == "not finished  ·  2 of 4 bonuses done", notDone.Summary);
+            page.Show = "zones";
+            Check("finished with zones left", Order() == "anoobis", Order());
+            page.Show = "todo";
+            Check("not done", Order() == "ambient_njv chasm", Order());
+            page.Show = "all";
+            page.Search = "andro";
+            Check("search", Order() == "andromeda", Order());
+            page.Search = "";
+            Check("how many, at the top", page.Status == "5 maps  ·  3 done  ·  1 WR  ·  2 in the top 10", page.Status);
+            var now = DateTime.Now;
+            Check("dates like ksf.surf's", RecordsViewModel.When(now) == "today" && RecordsViewModel.When(now.AddDays(-1)) == "1 day ago"
+                && RecordsViewModel.When(now.AddDays(-12)) == "12 days ago" && RecordsViewModel.When(new DateTime(2026, 8, 6)) == "Aug 6, 2026");
         }
 
         /// <summary>A stand-in Source server answering A2S as servers do now: a challenge number first, a long answer in pieces.</summary>
@@ -703,7 +772,7 @@ namespace KsfCompanion
         {
             Cli.StartHeadless();
             BarFill.Animate = false;
-            foreach (var page in new[] { "dashboard", "nominate", "binds" })
+            foreach (var page in new[] { "dashboard", "nominate", "records", "binds" })
             {
                 using (new Environment_("KSFC_PREVIEW_PAGE", page))
                 {

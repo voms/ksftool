@@ -186,6 +186,12 @@ namespace KsfCompanion
         string finishedShown, finishedReading;
         // Which tick rate's finished maps the nominate page marks: picked there (and kept), or else the one you play.
         string nominateGame;
+        // The records page: every KSF map with your record on it (by player, tick and style, as for the finished maps)
+        // and when it was read; which list is being read; which lists have gone stale (you've finished a map since).
+        readonly Dictionary<string, (DateTime At, List<MapRecord> List)> records = new Dictionary<string, (DateTime, List<MapRecord>)>(StringComparer.Ordinal);
+        readonly HashSet<string> staleRecords = new HashSet<string>(StringComparer.Ordinal);
+        string recordsReading;
+        DateTime nextRecordsTry;
         // A read of the map list that stopped (ksf.surf busy or away) carries on from here, a little later.
         int catalogResumeAt = 1;
         DateTime nextCatalogTry, nextFinishedTry;
@@ -248,8 +254,9 @@ namespace KsfCompanion
             {
                 nominateGame = p as string == Tick100 ? Tick100 : Tick66;
                 settings.Set("nominate_tick", nominateGame);
-                nextFinishedTry = DateTime.MinValue;
-                EnsureFinishedMaps();
+                nextFinishedTry = nextRecordsTry = DateTime.MinValue;
+                if (vm.IsRecordsPage) EnsureRecords();
+                else EnsureFinishedMaps();
             });
             vm.SetMapCatalog(catalog.Maps, loading: false);
             finishedMaps = new FinishedMaps(Path.Combine(Program.CacheDir, "finished-maps.txt"));
@@ -258,10 +265,18 @@ namespace KsfCompanion
             vm.MapSearchChanged += text => _ = SearchKsfAsync(text);
             vm.PropertyChanged += (s, e) =>
             {
-                if (e.PropertyName != nameof(DashboardViewModel.Page) || !vm.IsNominatePage) return;
-                EnsureMapCatalog();
-                EnsureFinishedMaps();
+                if (e.PropertyName != nameof(DashboardViewModel.Page)) return;
+                if (vm.IsNominatePage)
+                {
+                    EnsureMapCatalog();
+                    EnsureFinishedMaps();
+                }
+                else if (vm.IsRecordsPage) EnsureRecords();
             };
+            vm.Records.ThumbsNeeded += rows => _ = LoadRecordThumbsAsync(rows);
+            vm.Records.RefreshCommand = new RelayCommand(_ => EnsureRecords(force: true));
+            // Its search finds maps by their mappers too, once the nominate page has the map list.
+            vm.Records.MappersOf = map => catalog.Find(map)?.Mappers;
             vm.SelectLeaderboardCommand = new RelayCommand(SelectLeaderboard);
             vm.FollowLeaderboardCommand = new RelayCommand(_ =>
             {
@@ -1275,13 +1290,23 @@ namespace KsfCompanion
             var complete = false;
             try
             {
-                await api.GetFinishedMapsAsync(steamId, game, style, page =>
+                // Your records page has them all at once; if it ever doesn't, your "best records", 5 maps a request.
+                var list = await api.GetRecordsAsync(steamId, game, style);
+                if (list != null)
                 {
-                    finishedMaps.Merge(key, page);
-                    read += page.Count;
-                    // Shown as it comes in.
-                    if (page.Count > 0 && read % 25 == 0 && key == finishedShown) vm.SetFinishedMaps(finishedMaps.Of(key), loading: true);
-                }, shutdown.Token);
+                    read = KeepRecords(key, list);
+                    if (vm.IsRecordsPage && key == RecordsKey()) ShowRecords();
+                }
+                else
+                {
+                    await api.GetFinishedMapsAsync(steamId, game, style, page =>
+                    {
+                        finishedMaps.Merge(key, page);
+                        read += page.Count;
+                        // Shown as it comes in.
+                        if (page.Count > 0 && read % 25 == 0 && key == finishedShown) vm.SetFinishedMaps(finishedMaps.Of(key), loading: true);
+                    }, shutdown.Token);
+                }
                 complete = true;
             }
             catch (OperationCanceledException) { }
@@ -1307,6 +1332,8 @@ namespace KsfCompanion
         void MarkFinished(string map, double time, string game)
         {
             var key = FinishedMaps.Key(CurrentSteamId(), game, KsfStyle);
+            // The records page reads its list again next time (your rank and points there come from ksf.surf).
+            if (key != null) staleRecords.Add(key);
             if (!finishedMaps.Add(key, map, time)) return;
             finishedMaps.Save();
             if (key == FinishedKey()) ShowFinishedMaps();
@@ -1336,6 +1363,108 @@ namespace KsfCompanion
             {
                 try { vm.SetMapThumb(row, await images.MapAsync(row.Map, 240)); }
                 finally { thumbsLoading.Remove(row.Map); }
+            }));
+        }
+
+        // ----- records page -----
+
+        /// <summary>Whose records the records page shows: yours, on the tick rate picked (the nominate page's), in your style.</summary>
+        string RecordsKey() => FinishedMaps.Key(CurrentSteamId(), NominateGame, KsfStyle);
+
+        /// <summary>
+        /// The records page's list: every KSF map with your record on it, read from your records page on ksf.surf (one
+        /// request) when the page opens - again after 10 minutes, after you've finished a map, or on Refresh.
+        /// </summary>
+        async void EnsureRecords(bool force = false)
+        {
+            var steamId = CurrentSteamId();
+            var game = NominateGame;
+            var key = RecordsKey();
+            ShowRecords();
+            if (key == null || key == recordsReading) return;
+            var fresh = records.TryGetValue(key, out var known) && DateTime.Now - known.At < TimeSpan.FromMinutes(10) && !staleRecords.Contains(key);
+            if (!force && (fresh || DateTime.Now < nextRecordsTry)) return;
+            recordsReading = key;
+            ShowRecords();
+            try
+            {
+                var list = await api.GetRecordsAsync(steamId, game, KsfStyle);
+                if (list != null) KeepRecords(key, list);
+                else
+                {
+                    nextRecordsTry = DateTime.Now.AddMinutes(1);
+                    if (key == RecordsKey() && !records.ContainsKey(key)) vm.Records.Notice = "ksf.surf's records page didn't have your records in it - try Refresh in a bit";
+                }
+            }
+            catch (Exception ex) when (IsNetworkError(ex))
+            {
+                Program.Trace("records: " + ex.GetBaseException().Message);
+                nextRecordsTry = DateTime.Now.AddSeconds(30);
+                if (key == RecordsKey() && !records.ContainsKey(key)) vm.Records.Notice = "Couldn't reach ksf.surf for your records - try Refresh in a bit";
+            }
+            finally
+            {
+                // (The other tick rate's list may be on its way by now.)
+                if (recordsReading == key) recordsReading = null;
+            }
+            if (key == RecordsKey()) ShowRecords(keepNotice: !records.ContainsKey(key));
+            // The tick rate was switched while this one was read.
+            else if (vm.IsRecordsPage) EnsureRecords();
+        }
+
+        /// <summary>A records list read from ksf.surf: kept, and its finished maps marked done on the nominate page too. How many are done.</summary>
+        int KeepRecords(string key, List<MapRecord> list)
+        {
+            records[key] = (DateTime.Now, list);
+            staleRecords.Remove(key);
+            var done = list.Where(r => r.IsDone).Select(r => new FinishedMap
+            {
+                Map = r.Map,
+                Time = r.Time ?? 0,
+                Group = r.Group,
+                Points = r.Points is double points ? (int)Math.Round(points) : (int?)null,
+            }).ToList();
+            finishedMaps.Merge(key, done);
+            finishedMaps.MarkRead(key);
+            finishedMaps.Save();
+            if (key == FinishedKey()) ShowFinishedMaps();
+            return done.Count;
+        }
+
+        /// <summary>The records page as it stands: the list of the tick rate picked, or why there's none.</summary>
+        void ShowRecords(bool keepNotice = false)
+        {
+            var key = RecordsKey();
+            var tick = NominateGame == Tick100 ? "100T" : "66T";
+            var name = report?.PlayerName ?? settings.Get("last_name");
+            vm.NominateTick = NominateGame;
+            if (key == null)
+            {
+                vm.Records.SetRecords(new List<MapRecord>(), tick, null, loading: false);
+                vm.Records.Notice = "KSF Companion couldn't tell which Steam account you're on - set steamid in settings.ini (tray icon > Open data folder).";
+                return;
+            }
+            var heading = string.IsNullOrEmpty(name) ? tick : $"{name}  ·  {tick}";
+            var loading = recordsReading == key;
+            if (records.TryGetValue(key, out var known))
+            {
+                vm.Records.SetRecords(known.List, heading, known.At, loading);
+                vm.Records.Notice = "";
+            }
+            else
+            {
+                vm.Records.SetRecords(new List<MapRecord>(), heading, null, loading);
+                if (loading || !keepNotice) vm.Records.Notice = loading ? "Getting your records from ksf.surf..." : "";
+            }
+        }
+
+        async Task LoadRecordThumbsAsync(List<RecordRow> rows)
+        {
+            // (Its own entries in thumbsLoading: the nominate page may be loading the same picture for its own row.)
+            await Task.WhenAll(rows.Where(row => thumbsLoading.Add("records:" + row.Map)).Select(async row =>
+            {
+                try { vm.Records.SetThumb(row, await images.MapAsync(row.Map, 240)); }
+                finally { thumbsLoading.Remove("records:" + row.Map); }
             }));
         }
 

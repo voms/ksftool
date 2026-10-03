@@ -28,6 +28,8 @@ namespace KsfCompanion
             "                map \"sample\" = made-up data, no network needed)\n" +
             "ksf-companion --push \"<cmd>\"   send a console command to the running game and print its answer\n" +
             "ksf-companion --hud <demo.dem> show the timer text (stage you're on, stage finishes) found in a demo\n" +
+            "ksf-companion --records <steamid|auto> [66|100] [file.png]   read a player's records page on ksf.surf as\n" +
+            "               the Records tab does (and draw the tab to an image)\n" +
             "ksf-companion --server <ip:port>   ask a server what it tells a server browser (how a private KSF server\n" +
             "               in ksf_servers shows in the server list)\n" +
             "ksf-companion --clock-test | --binds-test | --selftest   the built-in tests";
@@ -88,6 +90,9 @@ namespace KsfCompanion
 
                     case "--server" when args.Length > 1:
                         return Server(args[1], output);
+
+                    case "--records" when args.Length > 1:
+                        return Records(args, settings, output);
 
                     case "--clock-test":
                         return ClockTest(output);
@@ -155,6 +160,55 @@ namespace KsfCompanion
         }
 
         /// <summary>What KSF Companion finds on this PC - the first thing to look at when something doesn't work.</summary>
+        /// <summary>
+        /// A player's records page on ksf.surf, read as the Records tab reads it: how many maps, what's done, the best
+        /// records - and the tab drawn to a picture, with the maps' pictures, if a file is given.
+        /// </summary>
+        static int Records(string[] args, Settings settings, TextWriter output)
+        {
+            var steamId = args[1] == "auto" ? SteamLocator.FindSteamId(settings.Get("steamid")) : SteamLocator.ParseSteamId(args[1]);
+            if (steamId == null)
+            {
+                output.WriteLine("whose records? a Steam ID (STEAM_0:1:123, [U:1:246] or 7656...), or auto for yours");
+                return 2;
+            }
+            var game = args.Length > 2 && args[2].StartsWith("100", StringComparison.Ordinal) ? "css100t" : "css";
+            var style = settings.GetInt("ksf_style", 0, 3);
+            using var api = new KsfApi();
+            // (Off the main thread, like the app's own requests: they carry on where they were asked.)
+            var records = Task.Run(() => api.GetRecordsAsync(steamId, game, style)).GetAwaiter().GetResult();
+            if (records == null)
+            {
+                output.WriteLine("ksf.surf's records page had no list of maps in it");
+                return 1;
+            }
+            var done = records.Where(r => r.IsDone).ToList();
+            output.WriteLine($"{records.Count} maps, {done.Count} done, {done.Count(r => r.Rank == 1)} WRs, {done.Count(r => r.Rank <= 10)} in the top 10;"
+                             + " groups " + string.Join(" ", Enumerable.Range(1, KsfGroups.Count).Select(g => $"{g}:{done.Count(r => r.Group == g)}"))
+                             + $"; {records.Count(r => !r.IsDone && (r.Stages.Contains(true) || r.Bonuses.Contains(true)))} not done with zones done");
+            static string Bits(bool[] flags) => flags.Length == 0 ? "-" : new string(flags.Select(f => f ? '1' : '0').ToArray());
+            foreach (var r in RecordsViewModel.Sorted(records, "points").Take(12))
+                output.WriteLine(string.Format(CultureInfo.InvariantCulture, "  {0,-30} T{1} {2,-6} {3,10} {4,10} {5,5} {6,6:0} pts {7,4}x {8:yyyy-MM-dd}  stages {9}  bonuses {10}",
+                    r.Map, r.Tier, r.IsLinear ? "linear" : "staged", r.Time is double t ? Format.Time(t) : "-", r.WrDiff is double d ? "+" + Format.Short(d) : "",
+                    r.Rank is int k ? "#" + k : r.Group is int g ? "g" + g : "", r.Points ?? 0, r.Completions ?? 0, r.Date, Bits(r.Stages), Bits(r.Bonuses)));
+            if (args.Length < 4) return 0;
+
+            StartHeadless();
+            BarFill.Animate = false;
+            var images = new ImageCache(api.Http);
+            var vm = new DashboardViewModel();
+            var nothing = new RelayCommand(_ => { });
+            vm.OpenLaterCommand = vm.ToggleSavedCommand = vm.NominateTickCommand = vm.Records.RefreshCommand = nothing;
+            var wanted = new List<RecordRow>();
+            vm.Records.ThumbsNeeded += rows => wanted.AddRange(rows);
+            vm.NominateTick = game;
+            vm.Records.SetRecords(records, (game == "css100t" ? "100T" : "66T"), DateTime.Now, loading: false);
+            vm.Page = "records";
+            var thumbs = Task.Run(() => Task.WhenAll(wanted.Select(row => images.MapAsync(row.Map, 240)))).GetAwaiter().GetResult();
+            for (var i = 0; i < wanted.Count; i++) vm.Records.SetThumb(wanted[i], thumbs[i]);
+            return Render(vm, KeyNames.From(settings), args[3], 1600, 1100, output);
+        }
+
         /// <summary>What a game server tells a server browser about itself (A2S): what the server list shows of a private KSF server.</summary>
         static int Server(string address, TextWriter output)
         {

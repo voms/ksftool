@@ -108,6 +108,11 @@ It runs on X11 and on Wayland desktops (through XWayland).
 - Search every KSF map (typos are OK), filter by tier, type, or done / not done on 66 or 100 tick.
 - Nominate or rock the vote in one click.
 
+### Records
+- Every KSF map with its picture and your record on it, like your records page on ksf.surf: time, WR diff, rank or
+  group, points, completions, date, and which stages and bonuses you've done.
+- Sort and filter like the site, plus "Zones left": maps you've finished with stages or bonuses still to do.
+
 ### Binds
 ![Binds](docs/binds-boreas.png)
 

@@ -185,6 +185,7 @@ namespace KsfCompanion.Ui
             PlayerChip.IsVisible = width >= 1200;
             // Size (Customize): everything on the page drawn bigger or smaller.
             Zoom(NominateZoom, vm.Layout.Scale);
+            Zoom(RecordsZoom, vm.Layout.Scale);
             var zoom = vm.Layout.Scale;
             Zoom(ColumnsZoom, zoom);
             width /= zoom;

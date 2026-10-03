@@ -103,6 +103,35 @@ namespace KsfCompanion
         public bool FromProfile;
     }
 
+    /// <summary>
+    /// A KSF map as your records page on ksf.surf lists it (every map is there, done or not): the map, and your record on
+    /// it - with which of its stages and bonuses you've done.
+    /// </summary>
+    sealed class MapRecord
+    {
+        public string Map;
+        public int Tier;
+        public bool IsLinear;
+        /// <summary>Stages on a staged map, checkpoints on a linear one.</summary>
+        public int StageCount;
+        public int BonusCount;
+        /// <summary>Your time on the map; null: not finished.</summary>
+        public double? Time;
+        /// <summary>How far behind the world record (0: it's yours).</summary>
+        public double? WrDiff;
+        public int? Completions;
+        public DateTime? Date;
+        public double? Points;
+        /// <summary>Your place on the leaderboard, when ksf.surf gives one (the top 10, and anyone below the groups).</summary>
+        public int? Rank;
+        /// <summary>Your group (1-6), when ksf.surf gives that instead of a place.</summary>
+        public int? Group;
+        /// <summary>Done or not, a stage at a time (a staged map's; none on a linear map) and a bonus at a time.</summary>
+        public bool[] Stages = new bool[0], Bonuses = new bool[0];
+
+        public bool IsDone => Time != null;
+    }
+
     /// <summary>A map you've finished: your best time there, and your group on it (1-6; null when you're not in one).</summary>
     sealed class FinishedMap
     {
@@ -373,6 +402,72 @@ namespace KsfCompanion
                 }).Where(m => !string.IsNullOrEmpty(m.Map)).ToList());
                 if (records.Count < pageSize) return;
             }
+        }
+
+        /// <summary>
+        /// Every KSF map with your record on it, as your records page on ksf.surf has them: the page carries the whole
+        /// list (it sorts and pages it itself), so this is one request. Null if the page has no list in it.
+        /// </summary>
+        public async Task<List<MapRecord>> GetRecordsAsync(string steamId, string game, int style)
+        {
+            var tick = game == "css100t" ? "100t" : "66t";
+            var mode = style switch { 1 => "sw", 2 => "hsw", 3 => "bw", _ => "fw" };
+            var html = await GetTextAsync($"/players/{Uri.EscapeDataString(steamId)}/records?game={tick}&mode={mode}", KeepForOthersNow).ConfigureAwait(false);
+            var records = html == null ? null : ParseRecordsPage(html);
+            return records?.Count > 0 ? records : null;
+        }
+
+        // The page's data comes in pieces of Next.js's stream: self.__next_f.push([1,"..."]), each a JSON string.
+        static readonly Regex FlightPiece = new Regex(@"self\.__next_f\.push\(\[1,\s*(""(?:[^""\\]|\\.)*"")\s*\]\)", RegexOptions.Compiled);
+        // One map of the list: {"mapName":"surf_x",...,"stages":[true,false],"bonuses":[]} - nothing nested but the arrays.
+        static readonly Regex RecordObject = new Regex(@"\{[^{}]*?""mapName"":""(?:[^""\\]|\\.)*""[^{}]*\}", RegexOptions.Compiled);
+
+        /// <summary>The map list in a records page (the maps' own records only, not stages' or bonuses').</summary>
+        internal static List<MapRecord> ParseRecordsPage(string html)
+        {
+            // The stream's pieces put back together (a map can be split across two), or else the page as it is.
+            var pieces = FlightPiece.Matches(html).Select(m => JsonText(m.Groups[1].Value)).ToList();
+            var data = pieces.Count > 0 ? string.Concat(pieces) : html.Replace("\\\"", "\"");
+            var records = new List<MapRecord>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (Match match in RecordObject.Matches(data))
+            {
+                Dictionary<string, object> r;
+                try { r = Json.Parse(match.Value) as Dictionary<string, object>; }
+                catch (ArgumentException) { continue; }
+                var map = Json.Str(r, "mapName");
+                if (string.IsNullOrEmpty(map) || (Json.Int(r, "zoneID") ?? 0) != 0 || !seen.Add(map)) continue;
+                var rank = Json.Str(r, "rank");
+                records.Add(new MapRecord
+                {
+                    Map = map,
+                    Tier = Json.Int(r, "tier") ?? 0,
+                    IsLinear = Json.Bool(r, "isLinear"),
+                    StageCount = Json.Int(r, "cp_count") ?? 0,
+                    BonusCount = Json.Int(r, "b_count") ?? 0,
+                    Time = Json.Num(r, "time") is double time && time > 0 ? time : (double?)null,
+                    WrDiff = Json.Num(r, "wrDiff"),
+                    Completions = Json.Int(r, "count"),
+                    Date = Json.Num(r, "date") is double date && date > 0 ? DateTimeOffset.FromUnixTimeSeconds((long)date).LocalDateTime : (DateTime?)null,
+                    Points = Json.Num(r, "points"),
+                    // "7" is 7th place; "g4" is group 4.
+                    Rank = rank != null && int.TryParse(rank, NumberStyles.None, CultureInfo.InvariantCulture, out var place) && place > 0 ? place : (int?)null,
+                    Group = rank != null && rank.StartsWith("g", StringComparison.OrdinalIgnoreCase)
+                            && int.TryParse(rank.Substring(1), NumberStyles.None, CultureInfo.InvariantCulture, out var group) ? group : (int?)null,
+                    Stages = Flags(Json.Get(r, "stages")),
+                    Bonuses = Flags(Json.Get(r, "bonuses")),
+                });
+            }
+            return records;
+        }
+
+        static bool[] Flags(object list) => (list as object[])?.Select(x => x is bool done && done).ToArray() ?? new bool[0];
+
+        /// <summary>A JSON string's text ("..." with its escapes; half an emoji comes out as �).</summary>
+        static string JsonText(string literal)
+        {
+            try { return Json.Parse(literal) as string ?? ""; }
+            catch (ArgumentException) { return ""; }
         }
 
         /// <summary>

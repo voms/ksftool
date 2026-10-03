@@ -130,11 +130,25 @@ The Nominate tab (top of the window)
     points). All / Not done / Done shows every map, only the ones you haven't finished yet, or
     only the ones you have - on the tick rate picked with 66T / 100T (it follows the server
     you're on until you pick one there). Which maps you've finished comes from
-    your ksf.surf profile, read about once a day (it takes a minute or two the first time); maps
-    you finish in between get their tick the moment you finish them.
+    your records page on ksf.surf (one request), read about once a day; maps you finish in
+    between get their tick the moment you finish them.
   - Both commands go through the console, so nothing is typed in chat; the server announces the
     votes as usual. The map list is loaded from ksf.surf once and kept for a week (new maps are
     added twice a day); if ksf.surf is busy part way through, the rest comes a little later.
+
+The Records tab (top of the window)
+  - Every KSF map with your record on it, like your records page on ksf.surf - with the maps'
+    pictures: your time, how far off the world record, your place (WR, #3) or group (G2),
+    points, completions, when you set it, and bars for the stages (one for the whole map on a
+    linear map) and the bonuses, green for the ones you've done and red for the rest.
+  - Sorted like ksf.surf (points) or by rank, time, WR diff, completions, date, tier or name; in
+    the list, click a column's name to sort by it. Show all maps, the ones you've done, the ones
+    you haven't (their pictures dimmed), or "Zones left": maps you've finished with stages or
+    bonuses still to do. Search by map or mapper, filter by tier and type, tiles or a list (the
+    same tile size as the nominate page). 66T / 100T is the nominate page's tick picker.
+  - The list is read from ksf.surf when you open the tab (one request: the page has every map),
+    again after 10 minutes or once you've finished a map, and whenever you click Refresh. Save
+    puts a map on your play-later list; the arrow opens it on ksf.surf.
 
   Live: when you finish a map, your time shows the moment the timer announces it in chat - a new
   PB, first finish or WR gets a big banner with the time you took off and the points you got -
