@@ -371,11 +371,20 @@ namespace KsfCompanion
                 // Your progress on each server's map (here: that player's), and the busiest other server opened.
                 vm.YourSteamId = steamId ?? you;
                 vm.SetServers(everyServer, liveServer.Address, saved);
-                if (vm.YourSteamId != null)
+                var progressOf = vm.YourSteamId;
+                if (progressOf != null)
                     foreach (var server in everyServer.Take(Environment.GetEnvironmentVariable("KSFC_PREVIEW_PROGRESS") == "0" ? 0 : 30))
-                        vm.SetMapProgress(server.Game, server.Map, MapProgress.From(
-                            api.GetPlayerZonesAsync(server.Map, vm.YourSteamId, server.Game, style, CancellationToken.None).GetAwaiter().GetResult(),
-                            server.IsLinear, server.StageCount, server.BonusCount));
+                    {
+                        // (On another thread, like the other paced lookups: they carry on on the thread that asked.)
+                        List<ZoneRecord> zones;
+                        try { zones = Task.Run(() => api.GetPlayerZonesAsync(server.Map, progressOf, server.Game, style, CancellationToken.None)).GetAwaiter().GetResult(); }
+                        catch (System.Net.Http.HttpRequestException ex)
+                        {
+                            output.WriteLine($"progress on {server.Map}: {ex.Message}");
+                            continue;
+                        }
+                        vm.SetMapProgress(server.Game, server.Map, MapProgress.From(zones, server.IsLinear, server.StageCount, server.BonusCount));
+                    }
                 var open = everyServer.Where(s => s != liveServer).OrderByDescending(s => s.Players.Count).FirstOrDefault();
                 if (open != null) vm.ToggleServerCommand.Execute(open.Address);
                 vm.SetSession(TimeSpan.FromMinutes(71), DateTime.Now.AddMinutes(-12), 4, 3, 1);
