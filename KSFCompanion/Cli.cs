@@ -253,6 +253,7 @@ namespace KsfCompanion
                     goal.Cutoff = goal.Group == 0 && report.Top.Count >= last ? report.Top[last - 1].Time
                         : api.GetRecordAtRankAsync(report.Info.Name, 0, last, game, style).GetAwaiter().GetResult()?.Time;
                 vm.ShowGroupGoal(goal);
+                output.WriteLine($"group tile: {vm.GroupGoalTitle}  {vm.GroupGoalTime}  {vm.GroupGoalDetail}  {vm.GroupGoalNote}");
             }
             // KSFC_PREVIEW_STAGE=3 shows stage 3 as the one you're on (31 = bonus 1).
             if (int.TryParse(Environment.GetEnvironmentVariable("KSFC_PREVIEW_STAGE"), out var onZone)) vm.SetCurrentZone(onZone);
