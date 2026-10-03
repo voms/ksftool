@@ -33,11 +33,18 @@ on:
   push:
     paths: ['.github/workflows/screenshots.yml']
 
+# It only reads the code (the pictures are kept as the run's artifact).
+permissions:
+  contents: read
+
 jobs:
   render:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Nothing here pushes: the token isn't left in .git/config for the build to read.
+          persist-credentials: false
 
       - name: Print what ksf.surf answers
         if: inputs.api != ''
@@ -82,7 +89,8 @@ jobs:
             sleep 1.2
           done
 
-      - uses: cachix/install-nix-action@v31
+      # Third-party actions are pinned to a commit: a tag can be moved to other code.
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
         if: inputs.api == ''
 
       - name: Ask game servers

@@ -20,6 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Nothing here pushes: the token isn't left in .git/config for the build to read.
+          persist-credentials: false
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -42,7 +45,8 @@ jobs:
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        # It gets the token that can write releases: pinned to a commit, as a tag can be moved to other code.
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: ksf-companion-linux-x64.tar.gz
           generate_release_notes: true
