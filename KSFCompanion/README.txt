@@ -68,8 +68,8 @@ The dashboard
     about 5 s. If the timer prints your stage/bonus times in chat (see the !surftimer options),
     those lines reach KSF Companion instantly and it uses them straight away.
   - LIVE: the KSF server you're on - everyone surfing there, which stage/checkpoint/bonus they're
-    on, their rank and how long they've been on (refreshed every 15 seconds). It lists 12;
-    "+ 28 more surfing - show everyone" lists them all.
+    on, their rank and how long they've been on (refreshed every 15 seconds), then who's
+    spectating. It lists 12; "+ 28 more surfing - show everyone" lists them all.
   - This session: how long you've been on servers, maps, finishes and new PBs since CS:S started.
     Leave a server and the clock waits (the last map stays on show) until you join one again;
     closing the game ends the session.
@@ -87,6 +87,11 @@ The dashboard
   It opens on your second monitor by itself when CS:S starts (without taking focus from the
   game) and remembers where you put it. Right-click the title bar for "Keep on top"; closing it
   only hides it.
+
+  Private KSF servers aren't on ksf.surf's list: one counts as KSF's (live stage times, the
+  session noticing when you leave it) from the first time it shows KSF's servers in chat
+  ("[Surf Timer] - Expert - surf_boreas (7/60) IP: ..."), and is remembered in settings.ini
+  (ksf_servers - you can put one there yourself, as ip:port).
 
   66 tick / 100 tick: KSF keeps separate records for its 100 tick servers (US 100T, EU 100T).
   The dashboard follows the server you're on automatically (it knows which one the moment you

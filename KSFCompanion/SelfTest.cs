@@ -231,6 +231,13 @@ namespace KsfCompanion
             check.Cancel();
             Check("switching servers asks nothing", !check.Tick(At(104)).Ask && !check.Pending);
 
+            // KSF's servers advertise each other in chat - a private one (not on ksf.surf's list) too: that's how it's known.
+            Check("KSF's server ads name the servers", Companion.AdvertisedServer("[Surf Timer] - Expert - surf_boreas (7/60) IP: 167.114.158.6:27016") == "167.114.158.6:27016"
+                && Companion.AdvertisedServer("[Surf Timer] - Beginner US Central - surf_eternity (22/60) IP: 74.91.115.159:27015") == "74.91.115.159:27015");
+            Check("other timer lines aren't ads", Companion.AdvertisedServer("[Surf Timer] - voms finished in 01:47:25 (WR +00:17:39). Improving by 02:55:11") == null
+                && Companion.AdvertisedServer("[Surf Timer] - Stage 'Stage 2' 00:06:85 (PR +00:00:29)") == null
+                && Companion.AdvertisedServer("[Casual] someone :  [Surf Timer] - X - surf_y (1/60) IP: 1.2.3.4:27015") == null);
+
             // A demo stopped on the server you're still on (or ksf.surf's list lagging): the server answers.
             check.Hint(At(200), TimeSpan.Zero, At(200));
             Check("asked", check.Tick(At(200)).Ask);
@@ -569,16 +576,23 @@ namespace KsfCompanion
             lists.SetServers(new List<KsfServer> { busy }, null, new HashSet<string>());
             Check("servers start closed", !lists.Servers[0].IsExpanded && lists.Servers[0].PlayerRows.Count == 0);
             lists.ToggleServerCommand.Execute(busy.Address);
-            Check("clicked open: its players", lists.Servers[0].IsExpanded && lists.Servers[0].PlayerRows.Count == 12 && lists.Servers[0].PlayersMore.StartsWith("+ 17 more surfing")
-                && lists.Servers[0].PlayersNote == "1 spectating", $"{lists.Servers[0].PlayerRows.Count} / {lists.Servers[0].PlayersMore} / {lists.Servers[0].PlayersNote}");
+            Check("clicked open: its players", lists.Servers[0].IsExpanded && lists.Servers[0].PlayerRows.Count == 12
+                && lists.Servers[0].PlayersMore.StartsWith("+ 17 more surfing, 1 spectating"), $"{lists.Servers[0].PlayerRows.Count} / {lists.Servers[0].PlayersMore}");
             lists.ShowEveryoneCommand.Execute(busy.Address);
-            Check("and everyone on it", lists.Servers[0].PlayerRows.Count == 29 && lists.Servers[0].PlayersMore == "show fewer");
+            Check("and everyone on it, the spectators after the surfers", lists.Servers[0].PlayerRows.Count == 30 && lists.Servers[0].PlayersMore == "show fewer"
+                && lists.Servers[0].PlayerRows[29].Zone == "SPEC" && lists.Servers[0].PlayerRows[29].Name == "p29" && lists.Servers[0].PlayerRows.Take(29).All(r => r.Zone != "SPEC"));
             lists.SetMapProgress("css", "surf_x", MapProgress.From(new[] { new ZoneRecord { ZoneId = 0, Time = 40.5 } }, linear: true, stages: 0, bonuses: 2));
             Check("your progress on its map", lists.Servers[0].HasProgress && lists.Servers[0].YourTime == "0:40.500" && lists.Servers[0].StagePattern == "1" && lists.Servers[0].BonusPattern == "00");
             lists.SetLiveServer(busy, "STEAM_0:0:3", "surf_x");
             Check("your server's card: the first 12, then everyone", lists.LivePlayers.Count == 12 && lists.HasLiveMore && lists.LivePlayers[0].IsYou);
             lists.ShowEveryoneCommand.Execute("live");
-            Check("on asking", lists.LivePlayers.Count == 29 && lists.LiveMore == "show fewer");
+            Check("on asking", lists.LivePlayers.Count == 30 && lists.LiveMore == "show fewer" && lists.LiveSubtitle.EndsWith("29 surfing  ·  1 spectating"), lists.LiveSubtitle);
+            var watchers = new KsfServer { Game = "css", Name = "Expert", Address = "192.0.2.2:27015", Map = "surf_boreas", IsLinear = true };
+            foreach (var (name, zone) in new[] { ("meow", 1), ("Doodito", 1), ("you", -1), ("a", -1), ("b", -1) })
+                watchers.Players.Add(new KsfServerPlayer { SteamId = name == "you" ? "STEAM_0:0:3" : "STEAM_0:0:" + name, Name = name, Zone = zone });
+            lists.SetLiveServer(watchers, "STEAM_0:0:3", "surf_boreas");
+            Check("spectators by name, you first among them", lists.LivePlayers.Count == 5 && !lists.HasLiveMore && lists.LivePlayers[2].Name == "you"
+                && lists.LivePlayers[2].IsYou && lists.LivePlayers[2].Zone == "SPEC" && lists.LivePlayers[0].Zone == "CP 1", string.Join(", ", lists.LivePlayers.Select(r => r.Name + " " + r.Zone)));
 
             // The session counts the time on servers only.
             var session = new DashboardViewModel();

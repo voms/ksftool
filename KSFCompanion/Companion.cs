@@ -60,6 +60,8 @@ namespace KsfCompanion
         // A demo stopped recording: our live one does when you leave the server - and when you switch servers, which
         // "Connecting to ..." follows straight away.
         static readonly Regex DemoCompletedLine = new Regex(@"^Completed demo\b", RegexOptions.Compiled);
+        // KSF's servers advertise each other in chat: "[Surf Timer] - Expert - surf_boreas (7/60) IP: 167.114.158.6:27016"
+        static readonly Regex KsfServerAdLine = new Regex(@"^\[Surf Timer\] - .+? - [\w\-.]+ \(\d+/\d+\) IP: (?<address>\d{1,3}(?:\.\d{1,3}){3}:\d+)", RegexOptions.Compiled);
         // Typing mp_timelimit in the console prints (only there): "mp_timelimit" = "80" ( def. "0" )
         static readonly Regex TimeLimitLine = new Regex(@"^""mp_timelimit"" = ""(?<minutes>\d+(?:\.\d+)?)""", RegexOptions.Compiled);
 
@@ -114,6 +116,9 @@ namespace KsfCompanion
         DateTime nextAnnounceTry, lastKsfChatAt = DateTime.MinValue;
 
         List<KsfServer> servers = new List<KsfServer>();
+        // Servers that are KSF's though ksf.surf's list doesn't have them (private ones): from settings.ini, and added
+        // by themselves when they show KSF's servers in chat.
+        readonly HashSet<string> extraKsfServers;
         KsfServer yourServer;
         int? lastRank, lastPoints;
         DateTime nextServerPoll, nextRecentPoll;
@@ -218,6 +223,7 @@ namespace KsfCompanion
             this.settings = settings;
             keys = KeyNames.From(settings);
             later = new PlayLaterList(Path.Combine(Program.DataDir, "play-later.txt"));
+            extraKsfServers = new HashSet<string>(settings.Get("ksf_servers").Split(new[] { ' ', ',', ';' }, StringSplitOptions.RemoveEmptyEntries));
             images = new ImageCache(api.Http);
             if (int.TryParse(settings.Get("last_rank"), out var rank)) lastRank = rank;
             if (int.TryParse(settings.Get("last_points"), out var points)) lastPoints = points;
@@ -748,8 +754,7 @@ namespace KsfCompanion
             {
                 var hostname = host.Groups[1].Value.Trim();
                 hostnameSeen?.TrySetResult(hostname);
-                onKsfServer = hostname.IndexOf("ksf", StringComparison.OrdinalIgnoreCase) >= 0
-                              || (connectedAddress != null && servers.Any(s => s.Address == connectedAddress));
+                onKsfServer = hostname.IndexOf("ksf", StringComparison.OrdinalIgnoreCase) >= 0 || IsKsfAddress(connectedAddress);
                 if (onKsfServer)
                 {
                     SetDetectedGame(Is100Tick(hostname) ? Tick100 : Tick66);
@@ -804,7 +809,7 @@ namespace KsfCompanion
                 // A KSF server if it's in KSF's list (or its name says so, once "status" has it) - not just because the
                 // last one was.
                 var known = servers.FirstOrDefault(s => s.Address == connectedAddress);
-                onKsfServer = known != null;
+                onKsfServer = known != null || extraKsfServers.Contains(connectedAddress);
                 if (known != null) ChooseTickEarly(known);
                 else _ = LookUpServerAsync(connectedAddress);
                 nextServerPoll = DateTime.MinValue;
@@ -877,6 +882,14 @@ namespace KsfCompanion
 
             // KSF servers advertise in chat every few minutes; a fallback if "status" gets no answer.
             if (line.StartsWith("[KSF Clan]", StringComparison.Ordinal)) lastKsfChatAt = DateTime.Now;
+
+            // A server that advertises KSF's servers is one of them, even if ksf.surf doesn't list it (a private one).
+            if (AdvertisedServer(line) is string advertised)
+            {
+                lastKsfChatAt = DateTime.Now;
+                if (connectedAddress != null && !IsKsfAddress(connectedAddress) && servers.Any(s => s.Address == advertised)) CountAsKsf(connectedAddress);
+                return;
+            }
 
             var next = NextMapLine.Match(line);
             if (next.Success)
@@ -1617,6 +1630,26 @@ namespace KsfCompanion
             UpdateSession();
         }
 
+        /// <summary>The server a KSF server-list ad in chat names ("... IP: 167.114.158.6:27016"), or null for any other line.</summary>
+        internal static string AdvertisedServer(string line)
+        {
+            var ad = KsfServerAdLine.Match(line);
+            return ad.Success ? ad.Groups["address"].Value : null;
+        }
+
+        /// <summary>A server address that's KSF's: on ksf.surf's list, or one of the private ones (ksf_servers in settings.ini).</summary>
+        bool IsKsfAddress(string address) => address != null && (servers.Any(s => s.Address == address) || extraKsfServers.Contains(address));
+
+        /// <summary>The server you're on is KSF's though ksf.surf doesn't list it: from now on (and next time) it counts as one.</summary>
+        void CountAsKsf(string address)
+        {
+            if (!extraKsfServers.Add(address)) return;
+            settings.Set("ksf_servers", string.Join(" ", extraKsfServers.OrderBy(a => a, StringComparer.Ordinal)));
+            Program.Trace($"{address} counts as a KSF server (it shows KSF's servers in chat)");
+            onKsfServer = true;
+            EnsureLiveDemo();
+        }
+
         /// <summary>
         /// Asks the game in a moment whether it's still on a server (see OnTick): if not, you left at <paramref name="hintAt"/>.
         /// </summary>
@@ -2048,7 +2081,7 @@ namespace KsfCompanion
                 var winner = await Task.WhenAny(hostname.Task, Task.Delay(3000));
                 hostnameSeen = null;
                 var onKsf = winner == hostname.Task
-                    ? hostname.Task.Result.IndexOf("ksf", StringComparison.OrdinalIgnoreCase) >= 0
+                    ? hostname.Task.Result.IndexOf("ksf", StringComparison.OrdinalIgnoreCase) >= 0 || IsKsfAddress(connectedAddress)
                     : DateTime.Now - lastKsfChatAt < TimeSpan.FromMinutes(15);
                 // One at a time: KSF answers a second command within a second with "You must wait 1.0 seconds".
                 var serverCommands = GameConfig.ServerCommands(settings).Split(';').Select(c => c.Trim()).Where(c => c.Length > 0).ToList();

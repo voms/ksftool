@@ -223,7 +223,7 @@ namespace KsfCompanion.Ui
         /// <summary>"+ 28 more surfing - show everyone", or "show fewer".</summary>
         public string PlayersMore { get; set; }
         public bool HasPlayersMore => !string.IsNullOrEmpty(PlayersMore);
-        /// <summary>"3 spectating", or that nobody's on.</summary>
+        /// <summary>That nobody's on it, if so.</summary>
         public string PlayersNote { get; set; }
 
         public void Update(DateTime now)
@@ -503,6 +503,7 @@ namespace KsfCompanion.Ui
         static readonly IBrush StartBrush = Frozen("#9A9AA6"), StartSoftBrush = Frozen("#229A9AA6");
         static readonly IBrush ZoneBrush = Frozen("#FF9A45"), ZoneSoftBrush = Frozen("#26FF7A1A");
         static readonly IBrush BonusBrush = Frozen("#C084FC"), BonusSoftBrush = Frozen("#26C084FC");
+        static readonly IBrush SpecBrush = Frozen("#8FA3BF"), SpecSoftBrush = Frozen("#228FA3BF");
 
         static readonly IBrush TimeBrush = Frozen("#F4F4F6"), TimeSoonBrush = Frozen("#FF8A3D"), TimeUpBrush = Frozen("#FF5C5C");
         string heroTimeBig = "", heroTimeLabel = "TIME LEFT", extendInfo = "";
@@ -510,7 +511,7 @@ namespace KsfCompanion.Ui
         bool hasExtendInfo;
         KsfServer liveServer;
         bool hasLiveServer, hasLiveTime, hasHeroTime, hasNextMap, hasSession;
-        string liveTitle, liveSubtitle, liveTimeLeft, liveSpectators, nextMap, sessionTitle, sessionTime, sessionMaps, sessionFinishes, sessionPbs,
+        string liveTitle, liveSubtitle, liveTimeLeft, nextMap, sessionTitle, sessionTime, sessionMaps, sessionFinishes, sessionPbs,
             celebrationTitle, celebrationDetail;
         double liveTimeFraction, heroTimeFraction;
         int celebrationId;
@@ -548,8 +549,6 @@ namespace KsfCompanion.Ui
         public string ExtendInfo { get => extendInfo; set => Set(ref extendInfo, value); }
         public bool HasExtendInfo { get => hasExtendInfo; set => Set(ref hasExtendInfo, value); }
         public double LiveTimeFraction { get => liveTimeFraction; set => Set(ref liveTimeFraction, value); }
-        /// <summary>"3 spectating" under the players.</summary>
-        public string LiveSpectators { get => liveSpectators; set => Set(ref liveSpectators, value); }
         public bool HasHeroTime { get => hasHeroTime; set => Set(ref hasHeroTime, value); }
         public double HeroTimeFraction { get => heroTimeFraction; set => Set(ref heroTimeFraction, value); }
         public bool HasNextMap { get => hasNextMap; set => Set(ref hasNextMap, value); }
@@ -593,11 +592,11 @@ namespace KsfCompanion.Ui
             var fresh = liveHeroMap == null || string.Equals(server.Map, liveHeroMap, StringComparison.OrdinalIgnoreCase);
             LiveTitle = server.Name;
             var players = Players(server, liveSteamId, fresh, everyoneShown.Contains("live"));
-            LiveSubtitle = fresh ? $"{server.Map}  ·  {players.Surfing} surfing" : $"{liveHeroMap}  ·  new map, updating...";
+            LiveSubtitle = fresh ? $"{server.Map}  ·  {players.Surfing} surfing" + (players.Spectating > 0 ? $"  ·  {players.Spectating} spectating" : "")
+                : $"{liveHeroMap}  ·  new map, updating...";
             foreach (var row in players.Rows) LivePlayers.Add(row);
             LiveMore = players.More;
             HasLiveMore = !string.IsNullOrEmpty(players.More);
-            LiveSpectators = players.Spectators;
             Tick(DateTime.Now);
         }
 
@@ -605,45 +604,51 @@ namespace KsfCompanion.Ui
         const int PlayersShown = 12;
 
         /// <summary>
-        /// A server's players as rows: you first, then the furthest along (stages before bonuses), then the longest on.
-        /// Spectators are only counted. Without <paramref name="all"/> it's the first 12, and More offers the rest.
+        /// A server's players as rows: you first, then the furthest along (stages before bonuses), then the longest on;
+        /// then the spectators. Without <paramref name="all"/> it's the first 12, and More offers the rest.
         /// </summary>
-        static (List<LivePlayerRow> Rows, int Surfing, string More, string Spectators) Players(KsfServer server, string yourSteamId, bool fresh, bool all)
+        static (List<LivePlayerRow> Rows, int Surfing, int Spectating, string More) Players(KsfServer server, string yourSteamId, bool fresh, bool all)
         {
-            var active = server.Players.Where(p => p.Zone != -1).ToList();
-            var spectating = server.Players.Count - active.Count;
-            var youSpectate = server.Players.Any(p => p.Zone == -1 && string.Equals(p.SteamId, yourSteamId, StringComparison.OrdinalIgnoreCase));
-            var spectators = spectating == 0 ? null
-                : youSpectate ? (spectating == 1 ? "you're spectating" : $"{spectating} spectating, including you")
-                : $"{spectating} spectating";
-            var hidden = all ? 0 : Math.Max(0, active.Count - PlayersShown);
-            var more = hidden > 0 ? $"+ {hidden} more surfing  -  show everyone" : all && active.Count > PlayersShown ? "show fewer" : null;
-            var rows = new List<LivePlayerRow>();
-            foreach (var p in active
-                .OrderByDescending(p => string.Equals(p.SteamId, yourSteamId, StringComparison.OrdinalIgnoreCase))
+            bool IsYou(KsfServerPlayer p) => string.Equals(p.SteamId, yourSteamId, StringComparison.OrdinalIgnoreCase);
+            var surfing = server.Players.Where(p => p.Zone != -1)
+                .OrderByDescending(IsYou)
                 .ThenBy(p => (p.Zone ?? 0) >= 30)
                 .ThenByDescending(p => p.Zone ?? 0)
                 .ThenByDescending(p => p.ConnectedSeconds ?? 0)
-                .Take(all ? int.MaxValue : PlayersShown))
+                .ToList();
+            var watching = server.Players.Where(p => p.Zone == -1).OrderByDescending(IsYou).ThenByDescending(p => p.ConnectedSeconds ?? 0).ToList();
+            var everyone = surfing.Concat(watching).ToList();
+            var shown = all ? everyone : everyone.Take(PlayersShown).ToList();
+            int hiddenSurfing = surfing.Count - shown.Count(p => p.Zone != -1), hiddenWatching = watching.Count - shown.Count(p => p.Zone == -1);
+            var more = hiddenSurfing + hiddenWatching > 0
+                ? "+ " + string.Join(", ", new[]
+                  {
+                      hiddenSurfing > 0 ? $"{hiddenSurfing} more surfing" : null,
+                      hiddenWatching > 0 ? $"{hiddenWatching}{(hiddenSurfing > 0 ? "" : " more")} spectating" : null,
+                  }.Where(x => x != null)) + "  -  show everyone"
+                : all && everyone.Count > PlayersShown ? "show fewer" : null;
+            var rows = new List<LivePlayerRow>();
+            foreach (var p in shown)
             {
                 var zone = p.Zone ?? 0;
+                var spectating = zone == -1;
                 var bonus = zone >= 30;
                 var start = zone < 1;
                 var row = new LivePlayerRow
                 {
                     Name = p.Name,
-                    Zone = !fresh ? "" : start ? "START" : bonus ? $"BONUS {zone - 30}" : (server.IsLinear ? "CP " : "STAGE ") + zone,
-                    ZoneBrush = start ? StartBrush : bonus ? BonusBrush : ZoneBrush,
-                    ZoneSoftBrush = start ? StartSoftBrush : bonus ? BonusSoftBrush : ZoneSoftBrush,
+                    Zone = spectating ? "SPEC" : !fresh ? "" : start ? "START" : bonus ? $"BONUS {zone - 30}" : (server.IsLinear ? "CP " : "STAGE ") + zone,
+                    ZoneBrush = spectating ? SpecBrush : start ? StartBrush : bonus ? BonusBrush : ZoneBrush,
+                    ZoneSoftBrush = spectating ? SpecSoftBrush : start ? StartSoftBrush : bonus ? BonusSoftBrush : ZoneSoftBrush,
                     Rank = p.Rank > 0 ? $"#{p.Rank:N0}" : "",
-                    IsYou = string.Equals(p.SteamId, yourSteamId, StringComparison.OrdinalIgnoreCase),
+                    IsYou = IsYou(p),
                     ConnectedAtFetch = p.ConnectedSeconds ?? 0,
                     FetchedAt = server.FetchedAt,
                 };
                 row.Update(DateTime.Now);
                 rows.Add(row);
             }
-            return (rows, active.Count, more, spectators ?? "");
+            return (rows, surfing.Count, watching.Count, more);
         }
 
         public void SetNextMap(string map, int? tier)
@@ -1697,7 +1702,7 @@ namespace KsfCompanion.Ui
                     var players = Players(s, YourSteamId, fresh: true, all: everyoneShown.Contains(s.Address));
                     foreach (var player in players.Rows) row.PlayerRows.Add(player);
                     row.PlayersMore = players.More;
-                    row.PlayersNote = s.Players.Count == 0 ? "nobody's on it right now" : players.Spectators;
+                    row.PlayersNote = s.Players.Count == 0 ? "nobody's on it right now" : "";
                 }
                 ShowProgress(row);
                 row.Update(DateTime.Now);
