@@ -5,6 +5,11 @@ name: Screenshots
 
 on:
   workflow_dispatch:
+    inputs:
+      map:
+        description: 'Also draw this map and print its KSF card (e.g. surf_bugs)'
+        required: false
+        default: ''
   push:
     paths: ['.github/workflows/screenshots.yml']
 
@@ -17,6 +22,8 @@ jobs:
       - uses: cachix/install-nix-action@v31
 
       - name: Draw the dashboard from ksf.surf
+        env:
+          MAP: ${{ inputs.map }}
         run: |
           nix build .#ksf-companion
           export KSFC_DATA_DIR="$RUNNER_TEMP/ksfc"
@@ -25,6 +32,10 @@ jobs:
           KSFC_PREVIEW_MODE=simple ./result/bin/ksf-companion --preview live dashboard-simple.png 1600 1080
           # And the in-game KSF card for a map, as text.
           ./result/bin/ksf-companion --card surf_utopia_njv
+          if [ -n "$MAP" ]; then
+            ./result/bin/ksf-companion --preview "$MAP" map.png 1600 1080
+            ./result/bin/ksf-companion --card "$MAP"
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
