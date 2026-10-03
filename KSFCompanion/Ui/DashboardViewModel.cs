@@ -1097,7 +1097,7 @@ namespace KsfCompanion.Ui
         string page = "dashboard", mapSearch = "", mapSort = "popular", mapView = "tiles", mapDone = "all", mapKind = "all", mapStatus = "";
         double tileSize = 280;
         int mapTier, mapsShown = MapsPerPage, mapsMatching;
-        bool hasMoreMaps, catalogLoading, finishedLoading, onlyCloseMatches;
+        bool hasMoreMaps, catalogLoading, finishedLoading, onlyCloseMatches, mapSortReversed;
         List<MapInfo> catalogMaps = new List<MapInfo>();
         HashSet<string> savedMapSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // The maps you've finished (on the tick and style on show), by name.
@@ -1111,7 +1111,8 @@ namespace KsfCompanion.Ui
             ShowPageCommand = new RelayCommand(p => Page = p as string == "nominate" || p as string == "records" || p as string == "binds" ? (string)p : "dashboard");
             Records = new RecordsViewModel(mapThumbs);
             SetMapTierCommand = new RelayCommand(p => MapTier = int.TryParse(p as string, out var tier) ? tier : 0);
-            SetMapSortCommand = new RelayCommand(p => MapSort = p as string ?? "popular");
+            SetMapSortCommand = new RelayCommand(p => PickMapSort(p as string ?? "popular"));
+            FlipMapSortCommand = new RelayCommand(_ => MapSortReversed = !mapSortReversed);
             SetMapViewCommand = new RelayCommand(p => MapView = p as string == "list" ? "list" : "tiles");
             SetMapDoneCommand = new RelayCommand(p => MapDone = p as string == "todo" || p as string == "done" ? (string)p : "all");
             SetMapKindCommand = new RelayCommand(p => MapKind = p as string == "linear" || p as string == "staged" ? (string)p : "all");
@@ -1199,9 +1200,48 @@ namespace KsfCompanion.Ui
             set
             {
                 if (!Set(ref mapSort, value)) return;
+                Raise(nameof(MapSortDirection));
                 mapsShown = MapsPerPage;
                 FilterMaps();
             }
+        }
+        /// <summary>The order the other way round: the least played first, the oldest, the hardest, Z-A, the worst rated.</summary>
+        public bool MapSortReversed
+        {
+            get => mapSortReversed;
+            set
+            {
+                if (!Set(ref mapSortReversed, value)) return;
+                Raise(nameof(MapSortDirection));
+                mapsShown = MapsPerPage;
+                FilterMaps();
+            }
+        }
+        /// <summary>Which way round the order is, in its own words: "Most played first", "Oldest first"...</summary>
+        public string MapSortDirection => mapSort switch
+        {
+            "newest" => mapSortReversed ? "Oldest first" : "Newest first",
+            "tier" => mapSortReversed ? "Hardest first" : "Easiest first",
+            "name" => mapSortReversed ? "Z-A" : "A-Z",
+            "rating" => mapSortReversed ? "Worst rated first" : "Best rated first",
+            _ => mapSortReversed ? "Least played first" : "Most played first",
+        };
+        public ICommand FlipMapSortCommand { get; }
+
+        /// <summary>An order picked: the one that's on again turns it round; another starts the right way round.</summary>
+        void PickMapSort(string value)
+        {
+            if (value == mapSort)
+            {
+                MapSortReversed = !mapSortReversed;
+                return;
+            }
+            if (mapSortReversed)
+            {
+                mapSortReversed = false;
+                Raise(nameof(MapSortReversed));
+            }
+            MapSort = value;
         }
         public string MapView
         {
@@ -1343,13 +1383,16 @@ namespace KsfCompanion.Ui
                 maps = maps.Where(scores.ContainsKey);
             }
             onlyCloseMatches = scores.Count > 0 && scores.Values.All(s => s >= MapMatch.Close);
+            var reversed = mapSortReversed;
+            var byName = StringComparer.OrdinalIgnoreCase;
             IEnumerable<MapInfo> sorted = mapSort switch
             {
-                "newest" => maps.OrderByDescending(m => m.Added ?? DateTime.MinValue),
-                "tier" => maps.OrderBy(m => m.Tier).ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase),
-                "name" => maps.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase),
-                "rating" => maps.OrderByDescending(m => m.RatingCount >= 3 ? m.Rating ?? 0 : 0).ThenByDescending(m => m.RatingCount),
-                _ => maps.OrderByDescending(m => m.Popularity),
+                // (A map without a date comes last either way round.)
+                "newest" => reversed ? maps.OrderBy(m => m.Added == null).ThenBy(m => m.Added) : maps.OrderBy(m => m.Added == null).ThenByDescending(m => m.Added),
+                "tier" => (reversed ? maps.OrderByDescending(m => m.Tier) : maps.OrderBy(m => m.Tier)).ThenBy(m => m.Name, byName),
+                "name" => reversed ? maps.OrderByDescending(m => m.Name, byName) : maps.OrderBy(m => m.Name, byName),
+                "rating" => ByRating(maps, reversed),
+                _ => reversed ? maps.OrderBy(m => m.Popularity) : maps.OrderByDescending(m => m.Popularity),
             };
             List<MapInfo> list;
             if (words.Length > 0)
@@ -1377,6 +1420,18 @@ namespace KsfCompanion.Ui
             UpdateMapStatus();
             var missing = MapResults.Where(r => r.Thumb == null).ToList();
             if (missing.Count > 0) ThumbsNeeded?.Invoke(missing);
+        }
+
+        /// <summary>
+        /// By rating, the best rated first (or the worst); a map needs 3 ratings for its rating to count, and the ones
+        /// that don't have them yet come after the rest either way round (the most rated first).
+        /// </summary>
+        static IEnumerable<MapInfo> ByRating(IEnumerable<MapInfo> maps, bool worstFirst)
+        {
+            static bool Rated(MapInfo m) => m.RatingCount >= 3 && m.Rating != null;
+            var rated = maps.Where(Rated);
+            return (worstFirst ? rated.OrderBy(m => m.Rating) : rated.OrderByDescending(m => m.Rating)).ThenByDescending(m => m.RatingCount)
+                .Concat(maps.Where(m => !Rated(m)).OrderByDescending(m => m.RatingCount));
         }
 
         /// <summary>"86 of 823 maps  ·  211 done", and what's still loading.</summary>

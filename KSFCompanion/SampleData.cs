@@ -144,6 +144,8 @@ namespace KsfCompanion
                     vm.SetMapCatalog(Catalog(now, info), loading: false);
                     vm.MapView = Environment.GetEnvironmentVariable("KSFC_PREVIEW_VIEW") == "list" ? "list" : "tiles";
                     vm.MapSearch = Environment.GetEnvironmentVariable("KSFC_PREVIEW_SEARCH") ?? "";
+                    vm.MapSort = Environment.GetEnvironmentVariable("KSFC_PREVIEW_SORT") ?? "popular";
+                    vm.MapSortReversed = Environment.GetEnvironmentVariable("KSFC_PREVIEW_REVERSED") == "1";
                     vm.Page = "nominate";
                     break;
                 case "records":
@@ -157,6 +159,9 @@ namespace KsfCompanion
                     vm.Records.View = Environment.GetEnvironmentVariable("KSFC_PREVIEW_VIEW") == "list" ? "list" : "tiles";
                     vm.Records.Show = Environment.GetEnvironmentVariable("KSFC_PREVIEW_SHOW") ?? "all";
                     vm.Records.Search = Environment.GetEnvironmentVariable("KSFC_PREVIEW_SEARCH") ?? "";
+                    // KSFC_PREVIEW_SORT=time, KSFC_PREVIEW_REVERSED=1: that order, the worst first.
+                    vm.Records.Sort = Environment.GetEnvironmentVariable("KSFC_PREVIEW_SORT") ?? "points";
+                    vm.Records.SortReversed = Environment.GetEnvironmentVariable("KSFC_PREVIEW_REVERSED") == "1";
                     vm.NominateTick = "css";
                     vm.NominateTickCommand = nothing;
                     vm.Page = "records";

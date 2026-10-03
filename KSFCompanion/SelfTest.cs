@@ -386,6 +386,45 @@ namespace KsfCompanion
             var now = DateTime.Now;
             Check("dates like ksf.surf's", RecordsViewModel.When(now) == "today" && RecordsViewModel.When(now.AddDays(-1)) == "1 day ago"
                 && RecordsViewModel.When(now.AddDays(-12)) == "12 days ago" && RecordsViewModel.When(new DateTime(2026, 8, 6)) == "Aug 6, 2026");
+
+            // Every order the other way round too - the worst first; the maps you haven't finished still come last.
+            page.SortReversed = true;
+            Check("the fewest points first", Order() == "yolo andromeda anoobis ambient_njv chasm" && page.SortDirection == "Fewest first", $"{Order()} / {page.SortDirection}");
+            page.SetSortCommand.Execute("rank");
+            Check("another order starts the right way round", !page.SortReversed && Order() == "anoobis yolo andromeda ambient_njv chasm" && page.SortDirection == "Best first",
+                $"{Order()} / {page.SortDirection}");
+            page.SetSortCommand.Execute("rank");
+            Check("picked again, it turns round", page.SortReversed && Order() == "andromeda yolo anoobis ambient_njv chasm" && page.SortDirection == "Worst first",
+                $"{Order()} / {page.SortDirection}");
+            page.SetSortCommand.Execute("wrdiff");
+            page.FlipSortCommand.Execute(null);
+            Check("the furthest from the record first", Order() == "yolo andromeda anoobis ambient_njv chasm" && page.SortDirection == "Furthest first", Order());
+            page.SetSortCommand.Execute("tier");
+            page.FlipSortCommand.Execute(null);
+            Check("the hardest first", Order() == "yolo ambient_njv chasm anoobis andromeda" && page.SortDirection == "Hardest first", Order());
+            page.SetSortCommand.Execute("name");
+            page.FlipSortCommand.Execute(null);
+            Check("Z-A", Order() == "yolo chasm anoobis andromeda ambient_njv" && page.SortDirection == "Z-A", Order());
+
+            // The nominate page's orders turn round the same way.
+            var nominate = new DashboardViewModel();
+            nominate.SetMapCatalog(new List<MapInfo>
+            {
+                new MapInfo { Name = "surf_a", Tier = 2, Popularity = 50, Rating = 4.5, RatingCount = 10, Added = now.AddDays(-30) },
+                new MapInfo { Name = "surf_b", Tier = 5, Popularity = 90, Rating = 3.1, RatingCount = 40, Added = now.AddDays(-3) },
+                new MapInfo { Name = "surf_c", Tier = 1, Popularity = 10, Rating = 5, RatingCount = 1 },
+            }, loading: false);
+            string Maps() => string.Join(" ", nominate.MapResults.Select(r => r.Map.Substring(5)));
+            Check("nominate: the most played first", Maps() == "b a c" && nominate.MapSortDirection == "Most played first", Maps());
+            nominate.SetMapSortCommand.Execute("popular");
+            Check("picked again, the least played first", Maps() == "c a b" && nominate.MapSortDirection == "Least played first", Maps());
+            nominate.SetMapSortCommand.Execute("rating");
+            Check("the best rated first (a rating counts from 3 votes)", Maps() == "a b c" && nominate.MapSortDirection == "Best rated first", Maps());
+            nominate.FlipMapSortCommand.Execute(null);
+            Check("the worst rated first, the ones without enough votes still last", Maps() == "b a c" && nominate.MapSortDirection == "Worst rated first", Maps());
+            nominate.SetMapSortCommand.Execute("newest");
+            nominate.FlipMapSortCommand.Execute(null);
+            Check("the oldest first, a map without a date last", Maps() == "a b c" && nominate.MapSortDirection == "Oldest first", Maps());
         }
 
         /// <summary>A stand-in Source server answering A2S as servers do now: a challenge number first, a long answer in pieces.</summary>

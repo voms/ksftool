@@ -121,7 +121,8 @@ The Nominate tab (top of the window)
   - Every KSF map with its picture, tier, stages/bonuses, mappers and rating. Search by map or
     mapper - no need to type surf_ or the _, and a typo or two swapped letters still finds it
     ("lieden" finds surf_leidenfrost, "No exact match" says when that's what you're seeing); filter by tier, by type (linear or staged) and by whether you've done it; sort by
-    popular / newest / tier / A-Z / rating; switch between tiles and a list, and make the tiles
+    popular / newest / tier / name / rating, either way round (the button next to them, or
+    clicking the order that's on again); switch between tiles and a list, and make the tiles
     bigger or smaller with the slider next to them (remembered). Nominate puts a map on the next vote (sm_nominate <map>; when you're not on
     a KSF server, "!nominate <map>" is copied for you to paste in chat instead); Save puts it on
     your play-later list (it then says Saved - click again to take it off). Your play-later maps
@@ -142,10 +143,14 @@ The Records tab (top of the window)
     points, completions, when you set it, and bars for the stages (one for the whole map on a
     linear map) and the bonuses, green for the ones you've done and red for the rest.
   - Sorted like ksf.surf (points) or by rank, time, WR diff, completions, date, tier or name; in
-    the list, click a column's name to sort by it. Show all maps, the ones you've done, the ones
-    you haven't (their pictures dimmed), or "Zones left": maps you've finished with stages or
-    bonuses still to do. Search by map or mapper, filter by tier and type, tiles or a list (the
-    same tile size as the nominate page). 66T / 100T is the nominate page's tick picker.
+    the list, click a column's name to sort by it. Each order starts with the best; the button
+    next to them (or clicking the order that's on again) turns it round: the fewest points, the
+    worst rank, the longest, the furthest from the record, the fewest completions, the oldest,
+    the hardest, Z-A - maps you haven't finished stay at the end either way.
+  - Show all maps, the ones you've done, the ones you haven't (their pictures dimmed), or "Zones
+    left": maps you've finished with stages or bonuses still to do. Search by map or mapper,
+    filter by tier and type, tiles or a list (the same tile size as the nominate page). 66T /
+    100T is the nominate page's tick picker.
   - The list is read from ksf.surf when you open the tab (one request: the page has every map),
     again after 10 minutes or once you've finished a map, and whenever you click Refresh. Save
     puts a map on your play-later list; the arrow opens it on ksf.surf.

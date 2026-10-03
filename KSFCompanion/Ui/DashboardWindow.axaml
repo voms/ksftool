@@ -422,6 +422,15 @@
         <Style Selector="Button.colHead.selected TextBlock">
             <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
         </Style>
+        <Style Selector="ui|Icon.sortArrow">
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+            <Setter Property="StrokeWidth" Value="2.6" />
+            <Setter Property="Margin" Value="3,0,0,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="ui|Icon.sortArrow.flipped">
+            <Setter Property="RenderTransform" Value="rotate(180deg)" />
+        </Style>
         <Style Selector="Button.zoneRow:pointerover Border.hover, Panel.mapTile:pointerover Border.hover, Panel.mapRow:pointerover Border.hover,
                          Panel.bindRow:pointerover Border.hover, Panel.laterRow:pointerover Border.hover, Panel.serverRow:pointerover Border.hover">
             <Setter Property="Opacity" Value="1" />
@@ -783,16 +792,28 @@
                                             <Button Theme="{StaticResource SegmentButton}" Content="Done" Command="{Binding SetMapDoneCommand}" CommandParameter="done" Classes.selected="{Binding MapDone, Converter={StaticResource Eq}, ConverterParameter=done}" />
                                         </StackPanel>
                                     </Border>
-                                    <TextBlock Classes="filterLabel" Text="SORT" Margin="0,0,8,6" />
-                                    <Border CornerRadius="7" Background="{StaticResource Bg2Brush}" Padding="2" Margin="0,0,20,6">
-                                        <StackPanel Orientation="Horizontal">
-                                            <Button Theme="{StaticResource SegmentButton}" Content="Popular" Command="{Binding SetMapSortCommand}" CommandParameter="popular" Classes.selected="{Binding MapSort, Converter={StaticResource Eq}, ConverterParameter=popular}" />
-                                            <Button Theme="{StaticResource SegmentButton}" Content="Newest" Command="{Binding SetMapSortCommand}" CommandParameter="newest" Classes.selected="{Binding MapSort, Converter={StaticResource Eq}, ConverterParameter=newest}" />
-                                            <Button Theme="{StaticResource SegmentButton}" Content="Tier" Command="{Binding SetMapSortCommand}" CommandParameter="tier" Classes.selected="{Binding MapSort, Converter={StaticResource Eq}, ConverterParameter=tier}" />
-                                            <Button Theme="{StaticResource SegmentButton}" Content="A-Z" Command="{Binding SetMapSortCommand}" CommandParameter="name" Classes.selected="{Binding MapSort, Converter={StaticResource Eq}, ConverterParameter=name}" />
-                                            <Button Theme="{StaticResource SegmentButton}" Content="Rating" Command="{Binding SetMapSortCommand}" CommandParameter="rating" Classes.selected="{Binding MapSort, Converter={StaticResource Eq}, ConverterParameter=rating}" />
-                                        </StackPanel>
-                                    </Border>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,20,6">
+                                        <TextBlock Classes="filterLabel" Text="SORT" Margin="0,0,8,0" />
+                                        <Border CornerRadius="7" Background="{StaticResource Bg2Brush}" Padding="2">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Button Theme="{StaticResource SegmentButton}" Content="Popular" Command="{Binding SetMapSortCommand}" CommandParameter="popular" Classes.selected="{Binding MapSort, Converter={StaticResource Eq}, ConverterParameter=popular}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="Newest" Command="{Binding SetMapSortCommand}" CommandParameter="newest" Classes.selected="{Binding MapSort, Converter={StaticResource Eq}, ConverterParameter=newest}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="Tier" Command="{Binding SetMapSortCommand}" CommandParameter="tier" Classes.selected="{Binding MapSort, Converter={StaticResource Eq}, ConverterParameter=tier}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="Name" Command="{Binding SetMapSortCommand}" CommandParameter="name" Classes.selected="{Binding MapSort, Converter={StaticResource Eq}, ConverterParameter=name}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="Rating" Command="{Binding SetMapSortCommand}" CommandParameter="rating" Classes.selected="{Binding MapSort, Converter={StaticResource Eq}, ConverterParameter=rating}" />
+                                            </StackPanel>
+                                        </Border>
+                                        <!-- Which way round: the best first or the worst (clicking the order that's on turns it round too). -->
+                                        <Border CornerRadius="7" Background="{StaticResource Bg2Brush}" Padding="2" Margin="6,0,0,0">
+                                            <Button Theme="{StaticResource SegmentButton}" Command="{Binding FlipMapSortCommand}"
+                                                    ToolTip.Tip="Turn the order round (clicking the order that's on does too)" ToolTip.ShowDelay="500">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <ui:Icon Data="{StaticResource IconArrowUpDown}" Width="12" Height="12" />
+                                                    <TextBlock Text="{Binding MapSortDirection}" Margin="6,0,0,0" />
+                                                </StackPanel>
+                                            </Button>
+                                        </Border>
+                                    </StackPanel>
                                 </WrapPanel>
                             </DockPanel>
                         </StackPanel>
@@ -944,8 +965,18 @@
                                                 <Button Theme="{StaticResource SegmentButton}" Content="Completions" Command="{Binding SetSortCommand}" CommandParameter="completions" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=completions}" />
                                                 <Button Theme="{StaticResource SegmentButton}" Content="Date" Command="{Binding SetSortCommand}" CommandParameter="date" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=date}" />
                                                 <Button Theme="{StaticResource SegmentButton}" Content="Tier" Command="{Binding SetSortCommand}" CommandParameter="tier" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=tier}" />
-                                                <Button Theme="{StaticResource SegmentButton}" Content="A-Z" Command="{Binding SetSortCommand}" CommandParameter="name" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=name}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="Name" Command="{Binding SetSortCommand}" CommandParameter="name" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=name}" />
                                             </StackPanel>
+                                        </Border>
+                                        <!-- Which way round: the best first or the worst (clicking the order that's on turns it round too). -->
+                                        <Border CornerRadius="7" Background="{StaticResource Bg2Brush}" Padding="2" Margin="6,0,0,0">
+                                            <Button Theme="{StaticResource SegmentButton}" Command="{Binding FlipSortCommand}"
+                                                    ToolTip.Tip="Turn the order round (clicking the order that's on does too)" ToolTip.ShowDelay="500">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <ui:Icon Data="{StaticResource IconArrowUpDown}" Width="12" Height="12" />
+                                                    <TextBlock Text="{Binding SortDirection}" Margin="6,0,0,0" />
+                                                </StackPanel>
+                                            </Button>
                                         </Border>
                                     </StackPanel>
                                 </WrapPanel>
@@ -972,35 +1003,67 @@
                                         <Panel Width="{Binding $parent[Window].DataContext.ListThumbWidth}" />
                                     <Button Grid.Column="1" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=name}"
                                             Command="{Binding SetSortCommand}" CommandParameter="name" HorizontalAlignment="Left" Margin="12,0,0,0">
-                                        <TextBlock Text="MAP" />
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="MAP" />
+                                            <ui:Icon Classes="sortArrow" Classes.flipped="{Binding SortReversed}" Data="{StaticResource IconChevronDown}" Width="10" Height="10"
+                                                     IsVisible="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=name}" />
+                                        </StackPanel>
                                     </Button>
                                     <Button Grid.Column="2" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=tier}"
                                             Command="{Binding SetSortCommand}" CommandParameter="tier" HorizontalAlignment="Left">
-                                        <TextBlock Text="TIER" />
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="TIER" />
+                                            <ui:Icon Classes="sortArrow" Classes.flipped="{Binding SortReversed}" Data="{StaticResource IconChevronDown}" Width="10" Height="10"
+                                                     IsVisible="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=tier}" />
+                                        </StackPanel>
                                     </Button>
                                     <Button Grid.Column="3" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=time}"
                                             Command="{Binding SetSortCommand}" CommandParameter="time" HorizontalAlignment="Left">
-                                        <TextBlock Text="TIME" />
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="TIME" />
+                                            <ui:Icon Classes="sortArrow" Classes.flipped="{Binding SortReversed}" Data="{StaticResource IconChevronDown}" Width="10" Height="10"
+                                                     IsVisible="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=time}" />
+                                        </StackPanel>
                                     </Button>
                                     <Button Grid.Column="4" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=wrdiff}"
                                             Command="{Binding SetSortCommand}" CommandParameter="wrdiff" HorizontalAlignment="Left">
-                                        <TextBlock Text="WR DIFF" />
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="WR DIFF" />
+                                            <ui:Icon Classes="sortArrow" Classes.flipped="{Binding SortReversed}" Data="{StaticResource IconChevronDown}" Width="10" Height="10"
+                                                     IsVisible="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=wrdiff}" />
+                                        </StackPanel>
                                     </Button>
                                     <Button Grid.Column="5" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=rank}"
                                             Command="{Binding SetSortCommand}" CommandParameter="rank" HorizontalAlignment="Left">
-                                        <TextBlock Text="RANK" />
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="RANK" />
+                                            <ui:Icon Classes="sortArrow" Classes.flipped="{Binding SortReversed}" Data="{StaticResource IconChevronDown}" Width="10" Height="10"
+                                                     IsVisible="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=rank}" />
+                                        </StackPanel>
                                     </Button>
                                     <Button Grid.Column="6" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=points}"
                                             Command="{Binding SetSortCommand}" CommandParameter="points" HorizontalAlignment="Left">
-                                        <TextBlock Text="POINTS" />
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="POINTS" />
+                                            <ui:Icon Classes="sortArrow" Classes.flipped="{Binding SortReversed}" Data="{StaticResource IconChevronDown}" Width="10" Height="10"
+                                                     IsVisible="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=points}" />
+                                        </StackPanel>
                                     </Button>
                                     <Button Grid.Column="7" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=completions}"
                                             Command="{Binding SetSortCommand}" CommandParameter="completions" HorizontalAlignment="Left" ToolTip.Tip="Completions">
-                                        <TextBlock Text="DONE" />
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="DONE" />
+                                            <ui:Icon Classes="sortArrow" Classes.flipped="{Binding SortReversed}" Data="{StaticResource IconChevronDown}" Width="10" Height="10"
+                                                     IsVisible="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=completions}" />
+                                        </StackPanel>
                                     </Button>
                                     <Button Grid.Column="8" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=date}"
                                             Command="{Binding SetSortCommand}" CommandParameter="date" HorizontalAlignment="Left">
-                                        <TextBlock Text="DATE" />
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="DATE" />
+                                            <ui:Icon Classes="sortArrow" Classes.flipped="{Binding SortReversed}" Data="{StaticResource IconChevronDown}" Width="10" Height="10"
+                                                     IsVisible="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=date}" />
+                                        </StackPanel>
                                     </Button>
                                         <TextBlock Grid.Column="9" Classes="colHeadText" Text="ZONES" ToolTip.Tip="Stages (on a linear map, the map itself), then bonuses: green = done" />
                                     </Grid>

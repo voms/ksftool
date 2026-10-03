@@ -111,7 +111,8 @@ It runs on X11 and on Wayland desktops (through XWayland).
 ### Records
 - Every KSF map with its picture and your record on it, like your records page on ksf.surf: time, WR diff, rank or
   group, points, completions, date, and which stages and bonuses you've done.
-- Sort and filter like the site, plus "Zones left": maps you've finished with stages or bonuses still to do.
+- Sort and filter like the site (every order best-to-worst or worst-to-best), plus "Zones left": maps you've finished
+  with stages or bonuses still to do.
 
 ### Binds
 ![Binds](docs/binds-boreas.png)

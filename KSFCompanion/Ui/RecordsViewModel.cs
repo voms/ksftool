@@ -104,12 +104,13 @@ namespace KsfCompanion.Ui
         HashSet<string> saved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         string playing, search = "", sort = "points", show = "all", kind = "all", view = "tiles", status = "", heading = "", notice = "", updated = "";
         int tier, shown = PerPage, matching;
-        bool loading, hasMore, hasRows;
+        bool loading, hasMore, hasRows, sortReversed;
 
         public RecordsViewModel(MapThumbs thumbs)
         {
             this.thumbs = thumbs;
-            SetSortCommand = new RelayCommand(p => Sort = p as string ?? "points");
+            SetSortCommand = new RelayCommand(p => PickSort(p as string ?? "points"));
+            FlipSortCommand = new RelayCommand(_ => SortReversed = !sortReversed);
             SetShowCommand = new RelayCommand(p => Show = p as string ?? "all");
             SetTierCommand = new RelayCommand(p => Tier = int.TryParse(p as string, NumberStyles.Integer, Inv, out var t) ? t : 0);
             SetKindCommand = new RelayCommand(p => Kind = p as string ?? "all");
@@ -128,7 +129,9 @@ namespace KsfCompanion.Ui
         /// <summary>Rows on show that have no picture yet: Companion loads them.</summary>
         public event Action<List<RecordRow>> ThumbsNeeded;
 
+        /// <summary>Parameter: the order. The one that's on again turns it round.</summary>
         public ICommand SetSortCommand { get; }
+        public ICommand FlipSortCommand { get; }
         public ICommand SetShowCommand { get; }
         public ICommand SetTierCommand { get; }
         public ICommand SetKindCommand { get; }
@@ -150,7 +153,57 @@ namespace KsfCompanion.Ui
         }
         public bool HasSearch => search.Length > 0;
         /// <summary>"points" (the default, like ksf.surf), "rank", "time", "wrdiff", "completions", "date", "tier" or "name".</summary>
-        public string Sort { get => sort; set { if (Set(ref sort, value)) Filter(fromStart: true); } }
+        public string Sort
+        {
+            get => sort;
+            set
+            {
+                if (!Set(ref sort, value)) return;
+                Raise(nameof(SortDirection));
+                Filter(fromStart: true);
+            }
+        }
+        /// <summary>The order the other way round: the worst first (fewest points, lowest rank, ...), Z-A.</summary>
+        public bool SortReversed
+        {
+            get => sortReversed;
+            set
+            {
+                if (!Set(ref sortReversed, value)) return;
+                Raise(nameof(SortDirection));
+                Filter(fromStart: true);
+            }
+        }
+        /// <summary>Which way round the order is, in its own words: "Most first", "Worst first", "Z-A"...</summary>
+        public string SortDirection => Direction(sort, sortReversed);
+
+        internal static string Direction(string sort, bool reversed) => sort switch
+        {
+            "rank" => reversed ? "Worst first" : "Best first",
+            "time" => reversed ? "Longest first" : "Shortest first",
+            "wrdiff" => reversed ? "Furthest first" : "Closest first",
+            "completions" => reversed ? "Fewest first" : "Most first",
+            "date" => reversed ? "Oldest first" : "Newest first",
+            "tier" => reversed ? "Hardest first" : "Easiest first",
+            "name" => reversed ? "Z-A" : "A-Z",
+            _ => reversed ? "Fewest first" : "Most first",
+        };
+
+        /// <summary>An order picked: the one that's on again turns it round; another starts the right way round (the best first).</summary>
+        void PickSort(string value)
+        {
+            if (value == sort)
+            {
+                SortReversed = !sortReversed;
+                return;
+            }
+            if (sortReversed)
+            {
+                sortReversed = false;
+                Raise(nameof(SortReversed));
+            }
+            Sort = value;
+        }
         /// <summary>"all", "done", "todo" (not finished) or "zones" (finished, with stages or bonuses still to do).</summary>
         public string Show { get => show; set { if (Set(ref show, value)) Filter(fromStart: true); } }
         public int Tier { get => tier; set { if (Set(ref tier, value)) Filter(fromStart: true); } }
@@ -249,7 +302,7 @@ namespace KsfCompanion.Ui
                     foreach (var close in scores.Where(s => s.Value >= MapMatch.Close).Select(s => s.Key).ToList()) scores.Remove(close);
                 list = list.Where(scores.ContainsKey);
             }
-            var ordered = Sorted(list, sort);
+            var ordered = Sorted(list, sort, sortReversed);
             // Searching: the best matches first, in the order picked among themselves.
             var sorted = (scores == null ? ordered : ordered.OrderBy(r => scores[r])).ToList();
 
@@ -263,25 +316,31 @@ namespace KsfCompanion.Ui
             if (missing.Count > 0) ThumbsNeeded?.Invoke(missing);
         }
 
-        /// <summary>The maps in an order: the ones you've finished first (in the order asked for), for the orders by your record.</summary>
-        internal static IEnumerable<MapRecord> Sorted(IEnumerable<MapRecord> list, string sort)
+        /// <summary>
+        /// The maps in an order, the best first (or, <paramref name="reversed"/>, the worst first). In the orders by your
+        /// record the maps you haven't finished come after the rest, either way round.
+        /// </summary>
+        internal static IEnumerable<MapRecord> Sorted(IEnumerable<MapRecord> list, string sort, bool reversed = false)
         {
             var byName = StringComparer.OrdinalIgnoreCase;
             switch (sort)
             {
-                case "name": return list.OrderBy(r => r.Map, byName);
-                case "tier": return list.OrderBy(r => r.Tier).ThenBy(r => r.Map, byName);
+                case "name": return reversed ? list.OrderByDescending(r => r.Map, byName) : list.OrderBy(r => r.Map, byName);
+                case "tier": return (reversed ? list.OrderByDescending(r => r.Tier) : list.OrderBy(r => r.Tier)).ThenBy(r => r.Map, byName);
             }
             var done = list.Where(r => r.IsDone);
             var notDone = list.Where(r => !r.IsDone).OrderBy(r => r.Map, byName);
-            IOrderedEnumerable<MapRecord> ordered = sort switch
+            // The best first: low for some orders (a rank, a time), high for others (points).
+            IOrderedEnumerable<MapRecord> By<T>(Func<MapRecord, T> key, bool lowIsBest) => lowIsBest != reversed ? done.OrderBy(key) : done.OrderByDescending(key);
+            var ordered = sort switch
             {
-                "rank" => done.OrderBy(Standing).ThenByDescending(r => r.Points ?? 0),
-                "time" => done.OrderBy(r => r.Time),
-                "wrdiff" => done.OrderBy(r => r.WrDiff ?? double.MaxValue),
-                "completions" => done.OrderByDescending(r => r.Completions ?? 0),
-                "date" => done.OrderByDescending(r => r.Date ?? DateTime.MinValue),
-                _ => done.OrderByDescending(r => r.Points ?? 0),
+                // Within a group, the most points first (the fewest, the other way round).
+                "rank" => reversed ? By(Standing, true).ThenBy(r => r.Points ?? 0) : By(Standing, true).ThenByDescending(r => r.Points ?? 0),
+                "time" => By(r => r.Time ?? 0, true),
+                "wrdiff" => By(r => r.WrDiff ?? double.MaxValue, true),
+                "completions" => By(r => r.Completions ?? 0, false),
+                "date" => By(r => r.Date ?? DateTime.MinValue, false),
+                _ => By(r => r.Points ?? 0, false),
             };
             return ordered.ThenBy(r => r.Map, byName).Concat(notDone);
         }
