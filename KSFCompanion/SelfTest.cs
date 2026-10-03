@@ -127,6 +127,10 @@ namespace KsfCompanion
             Check("numbers: int, long and double", Json.Get(root, "tier") is int && Json.Get(root, "big") is long && Json.Num(root, "time") == 61.25 && Json.Int(root, "time") == 61);
             Check("true, arrays, null", Json.Bool(root, "isLinear") && Json.Objects(Json.Get(root, "mappers")).Count() == 2 && Json.Get(root, "none") == null);
             Check("dates", Json.Date(root, "when")?.ToUniversalTime() == new DateTime(2025, 11, 23, 10, 0, 0, DateTimeKind.Utc));
+            // Player names cut off in the middle of an emoji: half a surrogate pair, which JavaScriptSerializer let through.
+            var names = Json.Objects(Json.Parse("[{\"name\":\"ab\\ud83d\"},{\"name\":\"\\ude00c\"},{\"name\":\"ok \\ud83d\\ude00\"},{\"name\":\"\\\\ud83d\\n\"}]")).Select(o => Json.Str(o, "name")).ToList();
+            Check("names with half an emoji still read", names.Count == 4 && names[0] == "ab\uFFFD" && names[1] == "\uFFFDc" && names[2] == "ok \U0001F600" && names[3] == "\\ud83d\n",
+                string.Join(" | ", names));
             var refused = false;
             try { Json.Parse("<html>busy</html>"); }
             catch (ArgumentException) { refused = true; }

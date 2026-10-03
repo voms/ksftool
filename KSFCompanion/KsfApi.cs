@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Text.Json;
@@ -747,7 +748,8 @@ namespace KsfCompanion
                 case JsonValueKind.Array:
                     return element.EnumerateArray().Select(Value).ToArray();
                 case JsonValueKind.String:
-                    return element.GetString();
+                    try { return element.GetString(); }
+                    catch (InvalidOperationException) { return LenientString(element.GetRawText()); }
                 case JsonValueKind.Number:
                     if (element.TryGetInt32(out var i)) return i;
                     if (element.TryGetInt64(out var l)) return l;
@@ -759,6 +761,38 @@ namespace KsfCompanion
                 default:
                     return null;
             }
+        }
+
+        /// <summary>
+        /// A JSON string with half an emoji in it (a player name cut off mid-character), which System.Text.Json won't
+        /// read: unescaped by hand, the stray half shown as �.
+        /// </summary>
+        static string LenientString(string raw)
+        {
+            var text = raw.Length >= 2 ? raw.Substring(1, raw.Length - 2) : "";
+            var chars = new StringBuilder(text.Length);
+            for (var i = 0; i < text.Length; i++)
+            {
+                if (text[i] != '\\' || i + 1 == text.Length)
+                {
+                    chars.Append(text[i]);
+                    continue;
+                }
+                var escaped = text[++i];
+                if (escaped == 'u' && i + 4 < text.Length &&
+                    ushort.TryParse(text.AsSpan(i + 1, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var code))
+                {
+                    chars.Append((char)code);
+                    i += 4;
+                }
+                else chars.Append(escaped switch { 'b' => '\b', 'f' => '\f', 'n' => '\n', 'r' => '\r', 't' => '\t', _ => escaped });
+            }
+            for (var i = 0; i < chars.Length; i++)
+            {
+                if (char.IsHighSurrogate(chars[i]) && i + 1 < chars.Length && char.IsLowSurrogate(chars[i + 1])) i++;
+                else if (char.IsSurrogate(chars[i])) chars[i] = '\uFFFD';
+            }
+            return chars.ToString();
         }
 
         public static IEnumerable<Dictionary<string, object>> Objects(object value) =>
