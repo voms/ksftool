@@ -10,6 +10,10 @@ on:
         description: 'Also draw this map and print its KSF card (e.g. surf_bugs)'
         required: false
         default: ''
+      api:
+        description: 'Or just print what ksf.surf answers at these paths (e.g. /api/maps/search/surf_bugs; for a page, the API paths it uses)'
+        required: false
+        default: ''
   push:
     paths: ['.github/workflows/screenshots.yml']
 
@@ -19,9 +23,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Print what ksf.surf answers
+        if: inputs.api != ''
+        env:
+          API: ${{ inputs.api }}
+        run: |
+          read -ra paths <<<"$API"
+          for path in "${paths[@]}"; do
+            echo "::group::$path"
+            reply=$(curl -sS --max-time 20 -A KSFCompanion/1.0 "https://ksf.surf$path")
+            if [[ "$path" == /api/* ]]; then
+              (jq -c . <<<"$reply" 2>/dev/null || printf '%s\n' "$reply") | head -c 20000
+              echo
+            else
+              # A page of the site: where its scripts ask ksf.surf's API for data.
+              for script in $(grep -oE '(https://ksf\.surf)?/[^"'\'' <>]+\.js' <<<"$reply" | sed 's|^https://ksf\.surf||' | sort -u); do
+                sleep 1.2
+                curl -sS --max-time 20 "https://ksf.surf$script" | grep -oE '.{0,80}/api/.{0,120}' || true
+              done | sort -u
+            fi
+            echo "::endgroup::"
+            # ksf.surf only takes about a request a second.
+            sleep 1.2
+          done
+
       - uses: cachix/install-nix-action@v31
+        if: inputs.api == ''
 
       - name: Draw the dashboard from ksf.surf
+        if: inputs.api == ''
         env:
           MAP: ${{ inputs.map }}
         run: |
@@ -40,6 +70,7 @@ jobs:
           ./result/bin/ksf-companion --card surf_utopia_njv
 
       - uses: actions/upload-artifact@v4
+        if: inputs.api == ''
         with:
           name: screenshots
           path: '*.png'
