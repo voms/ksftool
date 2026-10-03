@@ -187,8 +187,10 @@ Where things are
     errors.log        anything that went wrong
   ~/.cache/ksf-companion: what's kept from ksf.surf (map pictures, records, the map list)
   ksf-companion --status shows what it finds: Steam, CS:S, your account, -usercon, the game.
-  Updating: update it the way you installed it (nix flake update and rebuild, or the new download
-  over the old folder) - your settings stay.
+  Installing and updating on NixOS: step by step in README.md (https://github.com/voms/ksftool).
+  Updating: update it the way you installed it - a flake: nix flake update ksf-companion, then
+  rebuild; imported in configuration.nix: just rebuild (it fetches the newest once the last download
+  is an hour old); the download: the new one over the old folder. Your settings stay.
   Removing: close CS:S, then tray icon > "Remove from CS:S..."; then uninstall it the way you
   installed it.
 

@@ -3,40 +3,105 @@
 A second-monitor dashboard for **KSF surf** in **Counter-Strike: Source** - on Linux, packaged for **NixOS**.
 
 This is a Linux port of [KSF Companion](https://github.com/Shamshoo/ksf-companion) (Windows): the same dashboard,
-nominate page, binds page and in-game keys, running in your system tray.
+nominate page, binds page and in-game keys, plus a Records tab, running in your system tray.
 
 ## Install
 
 ### NixOS
 
-Add the flake and turn it on:
+Two small edits to your NixOS config, then a rebuild. First see which kind of config you have:
 
-```nix
-# flake.nix
-{
-  inputs.ksf-companion.url = "github:voms/ksftool";
-
-  outputs = { nixpkgs, ksf-companion, ... }: {
-    nixosConfigurations.my-pc = nixpkgs.lib.nixosSystem {
-      modules = [
-        ./configuration.nix
-        ksf-companion.nixosModules.default
-        {
-          programs.ksf-companion.enable = true;
-          # Optional: start it in the tray when you log in (anyone can still turn that off in its tray menu).
-          programs.ksf-companion.autostart = true;
-        }
-      ];
-    };
-  };
-}
+```sh
+ls /etc/nixos
 ```
+
+There's a `flake.nix`: follow **A**. Only `configuration.nix` (and `hardware-configuration.nix`): follow **B**. (If
+you keep your config in another folder and rebuild with `--flake`, that's **A**, with your folder instead of
+`/etc/nixos`.)
+
+#### A. Your config is a flake
+
+1. Open `/etc/nixos/flake.nix` (for example `sudo nano /etc/nixos/flake.nix`) and add the three lines marked
+   `# add`. Leave the rest of your file as it is:
+
+   ```nix
+   {
+     inputs = {
+       nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
+       ksf-companion.url = "github:voms/ksftool";                  # add
+     };
+
+     outputs = { self, nixpkgs, ksf-companion, ... }: {           # add ksf-companion,
+       nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
+         modules = [
+           ./configuration.nix
+           ksf-companion.nixosModules.default                     # add
+         ];
+       };
+     };
+   }
+   ```
+
+   If your `outputs` starts with `inputs@{ ... }:` or `{ ... }@inputs:`, you can write
+   `inputs.ksf-companion.nixosModules.default` in `modules` instead.
+
+2. Open `/etc/nixos/configuration.nix` and add these two lines inside its outer `{ ... }`, next to your other
+   settings:
+
+   ```nix
+   programs.ksf-companion.enable = true;
+   programs.ksf-companion.autostart = true;   # start it in the tray when you log in
+   ```
+
+3. Rebuild:
+
+   ```sh
+   sudo nixos-rebuild switch --flake /etc/nixos
+   ```
+
+   That picks the configuration named after your computer's hostname. If the name after `nixosConfigurations.` in
+   your `flake.nix` is a different one, put it after a `#`: `sudo nixos-rebuild switch --flake /etc/nixos#nixos`.
+   The first rebuild builds KSF Companion, which takes a few minutes.
+
+#### B. A plain `configuration.nix` (no flake)
+
+1. Open `/etc/nixos/configuration.nix` (for example `sudo nano /etc/nixos/configuration.nix`). Add the line marked
+   `# add` to the `imports` list at the top, and the two settings below it:
+
+   ```nix
+   imports = [
+     ./hardware-configuration.nix
+     "${builtins.fetchTarball "https://github.com/voms/ksftool/archive/HEAD.tar.gz"}/nix/nixos-module.nix"   # add
+   ];
+
+   programs.ksf-companion.enable = true;
+   programs.ksf-companion.autostart = true;   # start it in the tray when you log in
+   ```
+
+   Put the line into the `imports` you already have: a second `imports = [ ... ];` is an error.
+
+2. Rebuild:
+
+   ```sh
+   sudo nixos-rebuild switch
+   ```
+
+   The first rebuild builds KSF Companion, which takes a few minutes.
+
+#### After the rebuild
+
+1. If you tried it with `nix run` before, quit that copy: tray icon → **Exit**.
+2. Log out and back in (it starts in the tray), or start **KSF Companion** from your app menu.
+3. Set up CS:S once (next section). Your settings and play-later list stay in `~/.config/ksf-companion`, however
+   you start it.
 
 ### Home Manager
 
-```nix
-imports = [ ksf-companion.homeManagerModules.default ];
+To install it for your user instead: add the flake input as in **A**, then add
+`ksf-companion.homeManagerModules.default` where your Home Manager modules are listed (`home-manager.sharedModules`
+when Home Manager runs inside NixOS, or `modules` of `homeManagerConfiguration`), and in your home config:
 
+```nix
 programs.ksf-companion = {
   enable = true;
   autostart = true; # optional: a systemd user service in your graphical session
@@ -49,7 +114,9 @@ programs.ksf-companion = {
 nix run github:voms/ksftool
 ```
 
-`nix profile install github:voms/ksftool` keeps it. There's also `overlays.default`, which adds `pkgs.ksf-companion`.
+It runs until you close it, nothing is installed. (If Nix says flakes are experimental, add
+`--extra-experimental-features 'nix-command flakes'` after `nix run`.) There's also `overlays.default`, which adds
+`pkgs.ksf-companion`.
 
 ### Other distros
 
@@ -66,6 +133,8 @@ Or install [Nix](https://nixos.org/download) and use `nix run` as above.
 
 1. In Steam, right-click **Counter-Strike: Source → Properties → Launch Options** and add **`-usercon`**.
 2. Start KSF Companion, then (re)start CS:S. That's it.
+3. To check, run `ksf-companion --status` while you're on a server: `-usercon` should say `yes` and
+   `game console (rcon)` should say `connected (port 27015)`.
 
 - It finds CS:S and your Steam account by itself: Steam from your distro or NixOS (`programs.steam`), the Flatpak or
   the Snap, and every Steam library folder. It's made for the native Linux CS:S (the Windows one under Proton should
@@ -73,8 +142,8 @@ Or install [Nix](https://nixos.org/download) and use `nix run` as above.
 - No sign-in, no account. It never asks for your Steam password.
 - **Why `-usercon`:** on Windows the app hands its console commands (`status`, `mp_timelimit`, teleports, nominate,
   ...) to the game's window; Linux has nothing like that, so it sends them over the game's own remote console, which
-  CS:S only opens with `-usercon`. Until it's there the dashboard shows a reminder with a button that copies it for you. Everything that only
-  reads (the dashboard, F5 / F6 / F7) works without it.
+  CS:S only opens with `-usercon`. Until it's there the dashboard shows a reminder with a button that copies it for
+  you. Everything that only reads (the dashboard, F5 / F6 / F7) works without it.
 
 ## The tray icon
 
@@ -120,7 +189,7 @@ It runs on X11 and on Wayland desktops (through XWayland).
 - Put restart, restart stage, save/load location and turn binds on any key.
 - Your binds already in the game show up here. Nothing shows in chat.
 
-<sub>Screenshots from the Windows version; the Linux one looks the same.</sub>
+<sub>Screenshots from the Windows version. The Linux one looks the same, plus the Records tab and a few new tiles.</sub>
 
 Everything in detail: [KSFCompanion/README.txt](KSFCompanion/README.txt).
 
@@ -161,10 +230,17 @@ text before it's printed in your console, and pictures before they're opened. Ch
 
 ## Update or remove
 
-- **Update:** `nix flake update ksf-companion` and rebuild (or `nix profile upgrade`). With the download, extract the
-  new one over the old folder. Your settings stay.
-- **Remove:** close CS:S, then tray icon → **Remove from CS:S...** - that takes its files out of the game and puts
-  your old key binds back. Then take it out of your Nix config (or run `install.sh --remove` and delete the folder).
+**Update** (your settings stay):
+
+- Flake config (**A**): `cd /etc/nixos && sudo nix flake update ksf-companion`, then
+  `sudo nixos-rebuild switch --flake /etc/nixos`.
+- Plain config (**B**): every `sudo nixos-rebuild switch` gets the newest version once the last download is an hour
+  old; `sudo nixos-rebuild switch --option tarball-ttl 0` gets it right away.
+- The download: extract the new one over the old folder.
+
+**Remove:** close CS:S, then tray icon → **Remove from CS:S...** - that takes its files out of the game and puts your
+old key binds back. Then take the lines you added out of your NixOS config and rebuild (or run `install.sh --remove`
+and delete the folder).
 
 ## Build it yourself
 
