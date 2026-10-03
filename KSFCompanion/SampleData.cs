@@ -103,7 +103,8 @@ namespace KsfCompanion
             vm.YourSteamId = You;
             vm.SetServers(servers, yours.Address, saved);
             // Your progress on each server's map, and another server clicked open to see who's on it.
-            for (var i = 0; i < servers.Count; i++)
+            // (The last one's isn't in yet.)
+            for (var i = 0; i < servers.Count - 1; i++)
             {
                 var server = servers[i];
                 var zones = new List<ZoneRecord>();

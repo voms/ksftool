@@ -1299,15 +1299,17 @@
                                                             <Panel Classes="serverRow" Background="Transparent">
                                                                 <Border Classes="row" Classes.yours="{Binding IsYours}" Classes.open="{Binding IsExpanded}" />
                                                                 <Border Classes="hover" CornerRadius="9" Background="#0CFFFFFF" />
-                                                                <Grid Margin="10,7" ColumnDefinitions="136,*,Auto,Auto,66,Auto">
+                                                                <!-- Fixed widths after the map, so the progress bars line up from row to row. -->
+                                                                <Grid Margin="10,7" ColumnDefinitions="136,*,84,46,74,Auto">
                                                                     <StackPanel VerticalAlignment="Center">
                                                                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12.5" Foreground="{StaticResource Text1Brush}" TextTrimming="CharacterEllipsis" />
                                                                         <TextBlock Text="YOU'RE HERE" Foreground="{StaticResource AccentBrush}" FontFamily="{StaticResource DisplayFont}"
                                                                                    FontSize="10.5" FontWeight="SemiBold" IsVisible="{Binding IsYours}" />
                                                                     </StackPanel>
                                                                     <DockPanel Grid.Column="1" VerticalAlignment="Center">
-                                                                        <Border DockPanel.Dock="Left" CornerRadius="5" Padding="6,1" Background="{Binding TierSoftBrush}" VerticalAlignment="Center">
-                                                                            <TextBlock Text="{Binding Tier}" Foreground="{Binding TierBrush}" FontSize="11.5" FontWeight="SemiBold" FontFamily="{StaticResource DisplayFont}" />
+                                                                        <Border DockPanel.Dock="Left" CornerRadius="5" Padding="6,1" MinWidth="27" Background="{Binding TierSoftBrush}" VerticalAlignment="Center">
+                                                                            <TextBlock Text="{Binding Tier}" Foreground="{Binding TierBrush}" FontSize="11.5" FontWeight="SemiBold" FontFamily="{StaticResource DisplayFont}"
+                                                                                       HorizontalAlignment="Center" />
                                                                         </Border>
                                                                         <StackPanel Margin="8,0,0,0" VerticalAlignment="Center">
                                                                             <!-- The star right after the name, which gives way when there isn't room. -->
@@ -1321,13 +1323,13 @@
                                                                         </StackPanel>
                                                                     </DockPanel>
                                                                     <!-- Your time on the map, and the stages (or the map) and bonuses you've done: green done, red not yet. -->
-                                                                    <StackPanel Grid.Column="2" Width="74" Margin="10,0,0,0" VerticalAlignment="Center" Background="Transparent"
+                                                                    <StackPanel Grid.Column="2" Margin="10,0,0,0" VerticalAlignment="Center" Background="Transparent"
                                                                                 IsVisible="{Binding HasProgress}" ToolTip.Tip="{Binding ProgressTip}" ToolTip.ShowDelay="300">
                                                                         <TextBlock Classes="numbers" Text="{Binding YourTime}" Foreground="{Binding YourTimeBrush}" FontSize="11.5" HorizontalAlignment="Left" />
                                                                         <ui:ZoneBar Pattern="{Binding StagePattern}" Height="4" Margin="0,4,0,0" />
                                                                         <ui:ZoneBar Pattern="{Binding BonusPattern}" Height="4" Margin="0,2,0,0" IsVisible="{Binding HasBonusBar}" />
                                                                     </StackPanel>
-                                                                    <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
+                                                                    <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="10,0,0,0" VerticalAlignment="Center">
                                                                         <ui:Icon Data="{StaticResource IconUsers}" Foreground="{StaticResource Text2Brush}" Width="13" Height="13" />
                                                                         <TextBlock Classes="numbers" Text="{Binding Players}" Margin="6,0,0,0" FontSize="13.5" />
                                                                     </StackPanel>

@@ -42,6 +42,7 @@ namespace KsfCompanion
                 Section("json", () => Json_());
                 Section("times", () => Times());
                 Section("groups", () => Groups());
+                Section("leaving a server", () => Leaving());
                 Section("game config", () => Config(root));
                 Section("rcon", () => Rcon(root));
                 Section("open files", () => Open(root));
@@ -207,6 +208,35 @@ namespace KsfCompanion
             Check("stages and bonuses done, in order", progress.Stages == "1010" && progress.Bonuses == "01" && progress.Time == 62.5, progress.Stages + " " + progress.Bonuses);
             var linear = MapProgress.From(new ZoneRecord[0], linear: true, stages: 7, bonuses: 0);
             Check("a linear map is one bar, the map itself", linear.Stages == "0" && linear.Bonuses == "" && linear.Time == null);
+        }
+
+        /// <summary>As the game's console log has it (your console log, October 2026): the demo stops when you leave a server.</summary>
+        static void Leaving()
+        {
+            var t0 = new DateTime(2026, 10, 3, 15, 0, 0);
+            DateTime At(double seconds) => t0.AddSeconds(seconds);
+
+            // "Completed demo" and then nothing: the main menu. Nobody answers "status" - asked twice, then you've left,
+            // as of when the demo stopped.
+            var check = new LeaveCheck();
+            check.Hint(At(0), TimeSpan.FromSeconds(3), At(0));
+            Check("nothing asked straight away", !check.Tick(At(1)).Ask && check.Pending);
+            Check("\"status\" a moment later", check.Tick(At(3)).Ask);
+            Check("no answer: asked once more", check.Tick(At(9.5)).Ask);
+            var left = check.Tick(At(16)).LeftAt;
+            Check("no answer again: left, from when the demo stopped", left == At(0) && !check.Pending, left?.ToString("HH:mm:ss"));
+
+            // "Completed demo", then "Connecting to ..." straight away: another server, nothing to ask.
+            check.Hint(At(100), TimeSpan.FromSeconds(3), At(100));
+            check.Cancel();
+            Check("switching servers asks nothing", !check.Tick(At(104)).Ask && !check.Pending);
+
+            // A demo stopped on the server you're still on (or ksf.surf's list lagging): the server answers.
+            check.Hint(At(200), TimeSpan.Zero, At(200));
+            Check("asked", check.Tick(At(200)).Ask);
+            check.Answered(At(200.4));
+            var still = check.Tick(At(207));
+            Check("answered: still on the server", !still.Ask && still.LeftAt == null && !check.Pending);
         }
 
         static void Config(string root)

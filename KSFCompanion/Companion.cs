@@ -53,11 +53,12 @@ namespace KsfCompanion
         static readonly Regex ExtendedLine = new Regex(
             @"^(?:The Map has Been extended for (?<n>\d+) min|Extending map by (?<n>\d+) min|\[SM\] The current map has been extended)",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
-        // Off a server, a command meant for it says so: Can't "status", not connected
+        // Off a server, older builds of the game say so for a command meant for it: Can't "status", not connected
         static readonly Regex NotConnectedLine = new Regex(@"^Can't ""[^""]+"", not connected", RegexOptions.Compiled);
         // The server dropped you (kicked, shut down, timed out): "Disconnect: Server shutting down."
         static readonly Regex DisconnectLine = new Regex(@"^Disconnect: ", RegexOptions.Compiled);
-        // A demo stopped recording: our live one does when you leave the server (and when the map changes).
+        // A demo stopped recording: our live one does when you leave the server - and when you switch servers, which
+        // "Connecting to ..." follows straight away.
         static readonly Regex DemoCompletedLine = new Regex(@"^Completed demo\b", RegexOptions.Compiled);
         // Typing mp_timelimit in the console prints (only there): "mp_timelimit" = "80" ( def. "0" )
         static readonly Regex TimeLimitLine = new Regex(@"^""mp_timelimit"" = ""(?<minutes>\d+(?:\.\d+)?)""", RegexOptions.Compiled);
@@ -203,9 +204,10 @@ namespace KsfCompanion
         TimeSpan sessionPlayed;
         DateTime? sessionRunningSince;
         int sessionMaps, sessionFinishes, sessionPbs;
-        // Leaving a server: a hint (our demo stopped, ksf.surf's list lost you) is checked with "status", which off a
-        // server answers that it isn't connected.
-        DateTime? leaveCheckAt;
+        // Leaving a server: a hint (our demo stopped, ksf.surf's list lost you, a long quiet) is checked by asking the game
+        // for "status" (see LeaveCheck); and when the console last said anything.
+        readonly LeaveCheck leaveCheck = new LeaveCheck();
+        DateTime lastLineAt = DateTime.Now, lastQuietCheck = DateTime.MinValue;
         bool listedLastPoll;
         int unlistedPolls;
         // You left the server and haven't joined one since (ksf.surf's list still has you there for a minute).
@@ -339,6 +341,7 @@ namespace KsfCompanion
             {
                 if (currentMap == null || inGameAt != null) return;
                 inGameAt = DateTime.Now;
+                CancelLeaveCheck();
                 // Still on a KSF server: start the live timer recording now, not once "status" has answered - a stage
                 // finished in the first seconds of the map would be missed otherwise.
                 if (onKsfServer) EnsureLiveDemo();
@@ -348,7 +351,11 @@ namespace KsfCompanion
             vm.Clock = clock;
             parser.SaveRequested += SaveCurrentMap;
             parser.GameStarted += OnGameStarted;
-            parser.LineParsed += OnLine;
+            parser.LineParsed += line =>
+            {
+                lastLineAt = DateTime.Now;
+                OnLine(line);
+            };
 
             SetUpGame();
             ListChanged();
@@ -558,11 +565,20 @@ namespace KsfCompanion
                 // Prints only in the console: "mp_timelimit" = "80" ( def. "0" )
                 _ = PushAsync("mp_timelimit");
             }
-            if (leaveCheckAt is DateTime leaveCheck && now >= leaveCheck)
+            // Still on a server? "status" goes to it, and it answers with its address; off a server nothing does.
+            var (askStatus, leftAt) = leaveCheck.Tick(now);
+            if (leftAt is DateTime left) LeftServer(left);
+            else if (askStatus)
             {
-                leaveCheckAt = null;
-                // "status" goes to the server you're on; off one, the game answers that it isn't connected (LeftServer).
-                if (link == LinkState.Ready && sessionRunningSince != null) _ = PushAsync("status");
+                if (link == LinkState.Ready && !offServer && gamePid != 0) _ = PushAsync("status");
+                else leaveCheck.Cancel();
+            }
+            // A long quiet (no chat, no timer messages) may be the main menu without a hint: asked now and then.
+            if (sessionRunningSince != null && !offServer && link == LinkState.Ready && !leaveCheck.Pending
+                && now - lastLineAt > TimeSpan.FromMinutes(3) && now - lastQuietCheck > TimeSpan.FromMinutes(3))
+            {
+                lastQuietCheck = now;
+                CheckStillOnServer(0, lastLineAt);
             }
             if ((announcePending || cardEchoPending) && !announcing && link == LinkState.Ready && now >= nextAnnounceTry)
             {
@@ -602,7 +618,7 @@ namespace KsfCompanion
                     vm.SetLive(false);
                     vm.SetLiveServer(null, null, null);
                     vm.SetNextMap(null, null);
-                    leaveCheckAt = null;
+                    CancelLeaveCheck();
                     listedLastPoll = offServer = false;
                     // The session ends with the game.
                     PauseSession();
@@ -732,7 +748,8 @@ namespace KsfCompanion
             {
                 var hostname = host.Groups[1].Value.Trim();
                 hostnameSeen?.TrySetResult(hostname);
-                onKsfServer = hostname.IndexOf("ksf", StringComparison.OrdinalIgnoreCase) >= 0;
+                onKsfServer = hostname.IndexOf("ksf", StringComparison.OrdinalIgnoreCase) >= 0
+                              || (connectedAddress != null && servers.Any(s => s.Address == connectedAddress));
                 if (onKsfServer)
                 {
                     SetDetectedGame(Is100Tick(hostname) ? Tick100 : Tick66);
@@ -770,14 +787,24 @@ namespace KsfCompanion
 
             // A new server: its address says which KSF server it is - and so 66 or 100 tick - before the map loads,
             // so the first thing shown for the new map is already the right records.
+            // Switching servers: the demo that just stopped was the last server's.
+            if (line.StartsWith("Connecting to ", StringComparison.Ordinal))
+            {
+                CancelLeaveCheck();
+                return;
+            }
             var connected = ConnectedLine.Match(line);
             if (connected.Success)
             {
                 connectedAddress = connected.Groups["address"].Value;
                 yourServer = null;
                 offServer = false;
+                CancelLeaveCheck();
                 ResumeSession();
+                // A KSF server if it's in KSF's list (or its name says so, once "status" has it) - not just because the
+                // last one was.
                 var known = servers.FirstOrDefault(s => s.Address == connectedAddress);
+                onKsfServer = known != null;
                 if (known != null) ChooseTickEarly(known);
                 else _ = LookUpServerAsync(connectedAddress);
                 nextServerPoll = DateTime.MinValue;
@@ -786,13 +813,13 @@ namespace KsfCompanion
 
             if (NotConnectedLine.IsMatch(line) || DisconnectLine.IsMatch(line))
             {
-                LeftServer();
+                LeftServer(DateTime.Now);
                 return;
             }
             if (DemoCompletedLine.IsMatch(line))
             {
-                // Left the server, or just a map change: "status" tells.
-                CheckStillOnServer(4);
+                // Left the server, or switching to another (then "Connecting to" comes next): "status" tells.
+                CheckStillOnServer(3, DateTime.Now);
                 return;
             }
 
@@ -823,6 +850,8 @@ namespace KsfCompanion
             if (address.Success)
             {
                 var value = address.Groups["address"].Value;
+                // A server's answer to "status" (the game's own, off a server, would be this PC's).
+                if (!value.StartsWith("0.0.0.0", StringComparison.Ordinal) && !value.StartsWith("127.", StringComparison.Ordinal)) leaveCheck.Answered(DateTime.Now);
                 if (value != connectedAddress)
                 {
                     connectedAddress = value;
@@ -1577,35 +1606,41 @@ namespace KsfCompanion
             UpdateSession();
         }
 
-        /// <summary>Off a server (or the game closed): the session's clock waits.</summary>
-        void PauseSession()
+        /// <summary>Off a server (or the game closed): the session's clock stops at <paramref name="at"/> (now) and waits.</summary>
+        void PauseSession(DateTime? at = null)
         {
-            if (sessionRunningSince == null) return;
-            sessionPlayed = SessionPlayed(DateTime.Now);
+            if (!(sessionRunningSince is DateTime since)) return;
+            var now = DateTime.Now;
+            var until = at ?? now;
+            sessionPlayed = SessionPlayed(until < since ? since : until > now ? now : until);
             sessionRunningSince = null;
             UpdateSession();
         }
 
-        /// <summary>Asks the game in a moment whether it's still on a server (see LeftServer).</summary>
-        void CheckStillOnServer(double seconds)
+        /// <summary>
+        /// Asks the game in a moment whether it's still on a server (see OnTick): if not, you left at <paramref name="hintAt"/>.
+        /// </summary>
+        void CheckStillOnServer(double seconds, DateTime hintAt)
         {
-            if (offServer) return;
-            var at = DateTime.Now.AddSeconds(seconds);
-            if (leaveCheckAt == null || at < leaveCheckAt) leaveCheckAt = at;
+            if (offServer || gamePid == 0) return;
+            leaveCheck.Hint(hintAt, TimeSpan.FromSeconds(seconds), DateTime.Now);
         }
+
+        /// <summary>Joining a server (or on one): nothing to check.</summary>
+        void CancelLeaveCheck() => leaveCheck.Cancel();
 
         /// <summary>
         /// You left the server - the game is in its menu. The map stays on show (as the last map), the session's clock
         /// waits until you join a server again, and what was live about the server goes.
         /// </summary>
-        void LeftServer()
+        void LeftServer(DateTime since)
         {
-            leaveCheckAt = null;
+            CancelLeaveCheck();
             listedLastPoll = false;
             if (gamePid == 0 || offServer) return;
-            Program.Trace("left the server");
+            Program.Trace($"left the server (at {since:HH:mm:ss})");
             offServer = true;
-            PauseSession();
+            PauseSession(since);
             yourServer = null;
             onKsfServer = listedAsSpectating = false;
             connectedAddress = nextMapName = hudRequestedFor = null;
@@ -1794,6 +1829,7 @@ namespace KsfCompanion
             {
                 sessionMaps++;
                 offServer = false;
+                CancelLeaveCheck();
                 ResumeSession();
             }
             UpdateSession();
@@ -2103,9 +2139,9 @@ namespace KsfCompanion
                     else if (listedLastPoll && link == LinkState.Ready)
                     {
                         listedLastPoll = false;
-                        CheckStillOnServer(0);
+                        CheckStillOnServer(0, DateTime.Now);
                     }
-                    else if (listedLastPoll && ++unlistedPolls >= 2) LeftServer();
+                    else if (listedLastPoll && ++unlistedPolls >= 2) LeftServer(DateTime.Now);
                 }
                 // The address from "status" is exact; ksf.surf's player lists can lag a minute behind a server switch.
                 yourServer = gamePid == 0 || offServer ? null
