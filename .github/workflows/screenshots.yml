@@ -18,6 +18,10 @@ on:
         description: 'For a page in those paths: what to look for in it and its scripts (a regex; by default where they call the API)'
         required: false
         default: '/api/'
+      jq:
+        description: 'For JSON in those paths: just this part of it (a jq filter)'
+        required: false
+        default: '.'
   push:
     paths: ['.github/workflows/screenshots.yml']
 
@@ -32,13 +36,14 @@ jobs:
         env:
           API: ${{ inputs.api }}
           FIND: ${{ inputs.find }}
+          JQ: ${{ inputs.jq }}
         run: |
           read -ra paths <<<"$API"
           for path in "${paths[@]}"; do
             echo "::group::$path"
             curl -sS --max-time 20 -A KSFCompanion/1.0 -o reply -w 'HTTP %{http_code} %{content_type}\n' "https://ksf.surf$path"
             if [[ "$path" == /api/* ]]; then
-              (jq -c . reply 2>/dev/null || cat reply) | head -c 20000
+              (jq -c "${JQ:-.}" reply 2>/dev/null || cat reply) | head -c 20000
               echo
             else
               # A page of the site: where it and its scripts mention $FIND, and the pages it links to.
