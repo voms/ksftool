@@ -29,7 +29,15 @@ The dashboard
     (KSF doesn't publish these; they were worked out from ksf.surf's rankings.) For a rank title
     it says how many points the player in its last spot has right now.
   - Your numbers: world record, your best time and rank (top x%), gap to the WR, group,
-    finishes, attempts and time played, plus your bonus times.
+    finishes, attempts and time played, plus your bonus times. Times are cut off at the
+    millisecond like the game shows them (10.199, never rounded up to 10.200).
+  - Group tile: how much faster than your best you have to be to get into a KSF group - the next
+    one up from yours, or the one you pick with its arrows (the top 10, or group 1 to 6; it's
+    remembered). Before you've finished the map it shows the time to beat. KSF puts everyone
+    below the top 10 in a group by how far down the leaderboard they are: group 6 reaches two
+    thirds of the way down, group 5 a third, then 1/6, 1/12, 1/24 and 1/48 for groups 4 to 1 -
+    but groups 1 to 5 reach at least the 20th, 35th, 60th, 100th and 150th place (unless that's
+    past the end of group 6). (KSF doesn't publish this; it was worked out from ksf.surf.)
   - Leaderboard: the top 10, with you highlighted (and your own row if you're outside the top 10).
     It follows what you're doing: the map's while you're on the map or its stages, a bonus's while
     you're on that bonus. Click a chip above it (MAP, S1, B2, ...) or a row in "your times" to see
@@ -68,7 +76,8 @@ The dashboard
     says LIVE and gives you a Join button. Hover a map to nominate it (sent straight to the KSF
     server you're on; otherwise "!nominate <map>" is copied for chat), open it on ksf.surf, or
     remove it.
-  - KSF servers: every server, its map, players and time left. Hover one to join it.
+  - KSF servers: every server, its map (linear or staged, with its stages and bonuses), players
+    and time left. Hover one to join it.
   - Your recent KSF records (new PRs, groups, map finishes).
   The whole window takes on a faint tint of the map you're on.
   It opens on your second monitor by itself when CS:S starts (without taking focus from the

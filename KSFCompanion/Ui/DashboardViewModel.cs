@@ -187,6 +187,8 @@ namespace KsfCompanion.Ui
         public string Tier { get; set; }
         public IBrush TierBrush { get; set; }
         public IBrush TierSoftBrush { get; set; }
+        /// <summary>"staged · 4 stages · 6 bonuses", "linear · 2 bonuses".</summary>
+        public string Kind { get; set; }
         public string Players { get; set; }
         public string Address { get; set; }
         public bool IsYours { get; set; }
@@ -249,9 +251,10 @@ namespace KsfCompanion.Ui
         Bitmap mapImage;
 
         // tiles
-        bool hasWr, hasPb;
+        bool hasWr, hasPb, groupGoalReached;
         string wrTime = "--", wrHolder = "", wrDate = "", pbTime = "--", pbRank = "", pbTop = "", gapTime = "--", gapDetail = "",
-            groupText = "", finishes = "--", attempts = "", playtime = "";
+            groupText = "", finishes = "--", attempts = "", playtime = "", groupGoalTitle = "TO A GROUP", groupGoalTime = "--",
+            groupGoalDetail = "", groupGoalNote = "";
         double pbBar;
 
         // lists
@@ -753,6 +756,16 @@ namespace KsfCompanion.Ui
             set { if (Set(ref groupText, value)) Raise(nameof(HasGroup)); }
         }
         public bool HasGroup => !string.IsNullOrEmpty(groupText);
+        /// <summary>The group tile: the group (or the top 10) you're after...</summary>
+        public string GroupGoalTitle { get => groupGoalTitle; set => Set(ref groupGoalTitle, value); }
+        /// <summary>...how much faster than your best you have to be to get in (or the time to beat, before you've finished)...</summary>
+        public string GroupGoalTime { get => groupGoalTime; set => Set(ref groupGoalTime, value); }
+        public string GroupGoalDetail { get => groupGoalDetail; set => Set(ref groupGoalDetail, value); }
+        public string GroupGoalNote { get => groupGoalNote; set => Set(ref groupGoalNote, value); }
+        /// <summary>...or that you're in it already.</summary>
+        public bool GroupGoalReached { get => groupGoalReached; set => Set(ref groupGoalReached, value); }
+        /// <summary>Parameter "-1": the next better group (down to the top 10), "1": the next easier one.</summary>
+        public ICommand StepGroupGoalCommand { get; set; }
         public string Finishes { get => finishes; set => Set(ref finishes, value); }
         public string Attempts { get => attempts; set => Set(ref attempts, value); }
         public string Playtime { get => playtime; set => Set(ref playtime, value); }
@@ -825,6 +838,9 @@ namespace KsfCompanion.Ui
             HasWr = HasPb = false;
             WrTime = PbTime = GapTime = Finishes = "--";
             WrHolder = WrDate = PbRank = PbTop = GapDetail = GroupText = Attempts = Playtime = FinishersText = "";
+            GroupGoalTime = "--";
+            GroupGoalDetail = GroupGoalNote = "";
+            GroupGoalReached = false;
             PbBar = 0;
             Leaders.Clear();
             LeaderChips.Clear();
@@ -911,7 +927,7 @@ namespace KsfCompanion.Ui
                     GapTime = mine ? "WR" : Format.Gap(pb, r.Wr.Time);
                     GapDetail = mine ? "you hold the world record" : string.Format(Inv, "{0:0.0}% slower than the WR", (pb / r.Wr.Time - 1) * 100);
                 }
-                GroupText = me.Group > 0 ? "GROUP " + me.Group : "";
+                GroupText = me.Group is int group && group >= 1 && group <= KsfGroups.Count ? "GROUP " + group : me.Rank is int top && top <= 10 ? "TOP 10" : "";
             }
             else
             {
@@ -929,6 +945,40 @@ namespace KsfCompanion.Ui
 
             ShowTimes(r);
             ShowLeaderboardOf(r);
+        }
+
+        /// <summary>The group tile: what it takes to get into the group you're after, from your best time on the map.</summary>
+        public void ShowGroupGoal(GroupGoal goal)
+        {
+            GroupGoalTitle = goal.Group == 0 ? "TO THE TOP 10" : "TO GROUP " + goal.Group;
+            GroupGoalNote = goal.FirstRank is int first && goal.LastRank is int last && goal.Total > 0
+                ? string.Format(Inv, "ranks {0:N0}-{1:N0} of {2:N0}", first, last, goal.Total) : "";
+            // In it: ranked there, or (a time ksf.surf hasn't ranked yet) faster than whoever is at its end.
+            GroupGoalReached = goal.LastRank is int end
+                && (goal.YourRank is int rank ? rank <= end : goal.YourTime is double time && goal.Cutoff is double cut && time < cut);
+            if (GroupGoalReached)
+            {
+                GroupGoalTime = "IN";
+                GroupGoalDetail = goal.YourGroup is int yours && yours != goal.Group
+                    ? "you're in " + (yours == 0 ? "the top 10" : "group " + yours)
+                    : goal.YourRank is int place ? "you're in it at #" + place.ToString("N0", Inv) : "you're in it";
+            }
+            else if (goal.LastRank == null)
+            {
+                GroupGoalTime = "--";
+                GroupGoalDetail = goal.Loading ? "loading..." : goal.Total > 0 ? "not enough players for it yet" : "nobody has finished it yet";
+            }
+            else if (goal.Cutoff is double cutoff)
+            {
+                // Your best against the slowest time still in it: beat that and you're in.
+                GroupGoalTime = goal.YourTime is double mine ? Format.Gap(cutoff, mine) : Format.Time(cutoff);
+                GroupGoalDetail = goal.YourTime != null ? "beat " + Format.Time(cutoff) : "the time to beat";
+            }
+            else
+            {
+                GroupGoalTime = "--";
+                GroupGoalDetail = goal.Loading ? "loading..." : "";
+            }
         }
 
         // ----- nominate page: all of KSF's maps to search, filter and nominate, plus rock the vote -----
@@ -1506,6 +1556,7 @@ namespace KsfCompanion.Ui
                     Tier = "T" + s.Tier,
                     TierBrush = TierColor(s.Tier),
                     TierSoftBrush = TierSoft(s.Tier),
+                    Kind = KindOfMap(s.IsLinear, s.StageCount, s.BonusCount),
                     Players = s.PlayerCount.ToString(Inv),
                     Address = s.Address,
                     IsYours = s.Address == yourServerAddress,
@@ -1517,6 +1568,13 @@ namespace KsfCompanion.Ui
             }
             HasServers = Servers.Count > 0;
             ServersUpdated = "updated " + DateTime.Now.ToString("HH:mm", Inv);
+        }
+
+        /// <summary>What kind of map it is, as ksf.surf has it: "linear · 2 bonuses", "staged · 4 stages · 6 bonuses".</summary>
+        internal static string KindOfMap(bool linear, int stages, int bonuses)
+        {
+            var kind = linear ? "linear" : stages == 1 ? "staged · 1 stage" : stages > 1 ? $"staged · {stages} stages" : "staged";
+            return bonuses == 1 ? kind + " · 1 bonus" : bonuses > 1 ? $"{kind} · {bonuses} bonuses" : kind;
         }
 
         public void SetRecent(IEnumerable<RecentRecord> records)

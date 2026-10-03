@@ -20,6 +20,7 @@ namespace KsfCompanion
             ("view", "advanced", "the dashboard: simple (the essentials, bigger and cleaner) or advanced (every detail) - also the switch at the top of the dashboard"),
             ("hidden", "", "parts of the dashboard you've hidden (Customize at the top brings them back): map, timer, numbers, times, leaderboard, keys, live, session, level, later, servers, recent"),
             ("size", "100", "how big the dashboard is drawn, in percent (80 to 150) - also the Size slider in Customize"),
+            ("group_goal", "auto", "the KSF group the dashboard's group tile shows the time to: auto (the next one up from yours), top10, or 1 to 6 - also the arrows on that tile"),
             ("live_hud", "1", "1 = on KSF servers, have the game record a demo (cstrike/ksfc_live.dem, replaced every map, deleted when the game closes) so the dashboard can read the timer's on-screen text live: the stage you're on and your stage/bonus times the moment you finish them. Only reads the file - nothing touches the game"),
             ("turn_speed", "210", "how fast the turn binds turn, in degrees a second (cl_yawspeed) - also the slider on the dashboard's Binds page, where the binds are set"),
             ("key_save", "F5", "saves the current map to your play-later list (these three can also be changed on the Binds page)"),

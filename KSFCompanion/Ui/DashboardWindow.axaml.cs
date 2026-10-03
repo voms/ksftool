@@ -202,7 +202,8 @@ namespace KsfCompanion.Ui
             if (!wide) width = Math.Min(width, readable + 40);
 
             var leftWidth = wide ? (width - 56) * 0.6 : width - 40;
-            Tiles.Columns = leftWidth >= 720 ? 4 : 2;
+            // Five number tiles: all in a row, or three and two, or two to a row.
+            Tiles.Columns = leftWidth >= 900 ? 5 : leftWidth >= 560 ? 3 : 2;
             // Stages and bonuses side by side (S1-S8 | S9-S16) when there's room, otherwise one list each.
             var room = leftWidth >= 700;
             SideBySide(StagesGrid, StagesRight, room && vm.HasStagesB);

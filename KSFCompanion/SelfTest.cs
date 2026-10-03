@@ -41,6 +41,7 @@ namespace KsfCompanion
                 Section("steam", () => Steam(root));
                 Section("json", () => Json_());
                 Section("times", () => Times());
+                Section("groups", () => Groups());
                 Section("game config", () => Config(root));
                 Section("rcon", () => Rcon(root));
                 Section("open files", () => Open(root));
@@ -146,6 +147,21 @@ namespace KsfCompanion
             Check("a gap is between the times as they're shown", Format.Gap(10.26002, 10.199954) == "+0.061" && Format.Gap(10.199954, 10.26002) == "-0.061");
             Check("and gets minutes when it's long", Format.Gap(100.5, 35) == "+1:05.500");
             Check("times add up as they're shown", Format.Time(Format.Sum(new[] { 10.1999, 20.5009 })) == "0:30.699");
+        }
+
+        static void Groups()
+        {
+            // Where ksf.surf had each group end on 66 tick in October 2026: the top 10, then groups 1 to 6.
+            int?[] Ends(int total) => Enumerable.Range(0, 7).Select(g => KsfGroups.LastRank(g, total)).ToArray();
+            void Same(string what, int total, params int?[] ends) =>
+                Check(what, Ends(total).SequenceEqual(ends), string.Join(" ", Ends(total)));
+            Same("groups on a big map (surf_utopia_njv)", 23254, 10, 494, 978, 1947, 3883, 7757, 15506);
+            Same("groups 1-4 reach the 20th to 100th place on a smaller one (surf_bugs)", 465, 10, 20, 35, 60, 100, 161, 313);
+            Same("and group 5 the 150th (surf_dragonfall)", 352, 10, 20, 35, 60, 100, 150, 238);
+            Same("but nobody past two thirds is in one (surf_kraken)", 159, 10, 20, 35, 60, 100, 109, null);
+            Check("where a group starts", KsfGroups.FirstRank(1, 465) == 11 && KsfGroups.FirstRank(4, 465) == 61 && KsfGroups.FirstRank(0, 465) == 1);
+            Check("a rank's group", KsfGroups.Of(87, 465) == 4 && KsfGroups.Of(7, 465) == 0 && KsfGroups.Of(313, 465) == 6 && KsfGroups.Of(314, 465) == null);
+            Check("a map only the top 10 have finished has no groups", KsfGroups.LastRank(1, 10) == null && KsfGroups.LastRank(0, 7) == 7);
         }
 
         static void Config(string root)

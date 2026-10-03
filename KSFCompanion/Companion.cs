@@ -171,6 +171,11 @@ namespace KsfCompanion
         readonly CancellationTokenSource shutdown = new CancellationTokenSource();
         readonly Dictionary<string, (DateTime At, List<WorldRecord> Top)> zoneTops = new Dictionary<string, (DateTime, List<WorldRecord>)>(StringComparer.OrdinalIgnoreCase);
         string loadingZoneTop;
+        // The group tile: whoever is at the end of a group on a map (by game|style|map|rank), and the leaderboard sizes
+        // of maps you haven't finished (by game|style|map) - your own record has it otherwise.
+        readonly Dictionary<string, (DateTime At, WorldRecord Row)> groupCutoffs = new Dictionary<string, (DateTime, WorldRecord)>(StringComparer.OrdinalIgnoreCase);
+        readonly Dictionary<string, (DateTime At, int Total)> leaderboardSizes = new Dictionary<string, (DateTime, int)>(StringComparer.OrdinalIgnoreCase);
+        string loadingGroupCutoff;
         string lastLocalFinish;
         DateTime lastLocalFinishAt;
         readonly DateTime companionStartedAt = DateTime.Now;
@@ -214,6 +219,7 @@ namespace KsfCompanion
                 UpdateLeaderboard();
             });
             vm.JoinCommand = new RelayCommand(p => Join(p as string));
+            vm.StepGroupGoalCommand = new RelayCommand(StepGroupGoal);
             vm.OpenFolderCommand = new RelayCommand(_ => OpenDataFolder());
             vm.NoticeActionCommand = new RelayCommand(_ => CopyText("-usercon", "Copied  -usercon  - paste it into CS:S's launch options in Steam"));
             vm.TickCommand = new RelayCommand(p =>
@@ -2114,6 +2120,106 @@ namespace KsfCompanion
             try { config?.WriteCard(CardBuilder.Build(report, saved, keys)); }
             catch (IOException) { }
             vm.ShowReport(report, saved);
+            UpdateGroupGoal();
+        }
+
+        /// <summary>The group you picked on the group tile (0 = the top 10), or null: the next one up from yours.</summary>
+        int? PickedGroupGoal()
+        {
+            var value = settings.Get("group_goal");
+            if (string.Equals(value, "top10", StringComparison.OrdinalIgnoreCase) || value == "0") return 0;
+            return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var group) && group >= 1 && group <= KsfGroups.Count
+                ? group : (int?)null;
+        }
+
+        /// <summary>The group the tile is about: your pick, or the next one up from where your best puts you (group 6 before you've finished).</summary>
+        int GroupGoalNow()
+        {
+            if (PickedGroupGoal() is int picked) return picked;
+            var me = report?.Main;
+            if (me?.Time == null) return KsfGroups.Count;
+            var yours = me.Group is int group && group >= 0 && group <= KsfGroups.Count ? group
+                : me.Rank is int rank && me.TotalRanks is int total ? KsfGroups.Of(rank, total) : null;
+            return yours is int g ? Math.Max(0, g - 1) : KsfGroups.Count;
+        }
+
+        /// <summary>The arrows on the group tile: -1 = a better group (down to the top 10), 1 = an easier one.</summary>
+        void StepGroupGoal(object parameter)
+        {
+            if (!int.TryParse(parameter as string, NumberStyles.Integer, CultureInfo.InvariantCulture, out var step)) return;
+            var goal = Math.Max(0, Math.Min(KsfGroups.Count, GroupGoalNow() + Math.Sign(step)));
+            settings.Set("group_goal", goal == 0 ? "top10" : goal.ToString(CultureInfo.InvariantCulture));
+            UpdateGroupGoal();
+        }
+
+        /// <summary>
+        /// The group tile for the map on show: where that group ends on the map's leaderboard, and the time there -
+        /// looked up on ksf.surf (one request, kept a few minutes) unless your best is in the group already.
+        /// </summary>
+        void UpdateGroupGoal()
+        {
+            var r = report;
+            if (r?.Info == null) return;
+            var me = r.Main;
+            var sizeKey = $"{r.Game}|{KsfStyle}|{r.Info.Name}";
+            var total = me?.TotalRanks ?? (leaderboardSizes.TryGetValue(sizeKey, out var size) && DateTime.Now - size.At < TimeSpan.FromMinutes(30) ? size.Total : 0);
+            var goal = new GroupGoal
+            {
+                Group = GroupGoalNow(),
+                Total = total,
+                YourTime = me?.Time,
+                // A time you just set isn't ranked yet: it's compared by time instead.
+                YourRank = me?.Unsynced == true ? null : me?.Rank,
+                YourGroup = me?.Time == null || me.Unsynced ? null
+                    : me.Group is int group && group >= 0 && group <= KsfGroups.Count ? group : me.Rank is int rank && total > 0 ? KsfGroups.Of(rank, total) : null,
+            };
+            goal.FirstRank = KsfGroups.FirstRank(goal.Group, total);
+            goal.LastRank = KsfGroups.LastRank(goal.Group, total);
+            if (total == 0 && r.Wr != null)
+            {
+                // You haven't finished it: the record holder's own record says how many have.
+                goal.Loading = true;
+                _ = LoadGroupCutoffAsync(r, sizeKey, null);
+            }
+            else if (goal.LastRank is int last && !(goal.YourRank <= last))
+            {
+                var key = $"{sizeKey}|{last}";
+                // The top 10 is on show already.
+                if (goal.Group == 0 && r.Top.Count >= last) goal.Cutoff = r.Top[last - 1].Time;
+                else if (groupCutoffs.TryGetValue(key, out var known) && DateTime.Now - known.At < TimeSpan.FromMinutes(5)) goal.Cutoff = known.Row?.Time;
+                else
+                {
+                    goal.Loading = true;
+                    _ = LoadGroupCutoffAsync(r, sizeKey, last);
+                }
+            }
+            vm.ShowGroupGoal(goal);
+        }
+
+        /// <summary>Looks up the time at <paramref name="rank"/> on the map (or, with no rank, how many have finished it) for the group tile.</summary>
+        async Task LoadGroupCutoffAsync(MapReport r, string sizeKey, int? rank)
+        {
+            var key = rank is int at ? $"{sizeKey}|{at}" : sizeKey;
+            if (loadingGroupCutoff == key || DateTime.Now < api.BusyUntil) return;
+            loadingGroupCutoff = key;
+            try
+            {
+                if (rank is int cutoffRank)
+                    groupCutoffs[key] = (DateTime.Now, await api.GetRecordAtRankAsync(r.Info.Name, 0, cutoffRank, r.Game, KsfStyle));
+                else if (await api.GetTotalRanksAsync(r.Info.Name, r.Wr.SteamId, r.Game, KsfStyle) is int total)
+                    leaderboardSizes[key] = (DateTime.Now, total);
+                else return;
+            }
+            catch (Exception ex) when (IsNetworkError(ex))
+            {
+                Program.Trace($"group tile ({key}): {ex.GetBaseException().Message}");
+                return;
+            }
+            finally
+            {
+                if (loadingGroupCutoff == key) loadingGroupCutoff = null;
+            }
+            if (report == r) UpdateGroupGoal();
         }
 
         /// <summary>

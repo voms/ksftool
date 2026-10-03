@@ -891,7 +891,7 @@
 
                             <!-- stat tiles -->
                             <ContentControl Theme="{StaticResource Part}" Tag="numbers" IsVisible="{Binding Layout[numbers]}">
-                                <UniformGrid x:Name="Tiles" Columns="4" Margin="0,0,-12,4" IsVisible="{Binding IsOnKsf}">
+                                <ui:TileRows x:Name="Tiles" Columns="5" Margin="0,0,-12,4" IsVisible="{Binding IsOnKsf}">
                                     <Border Classes="card tile">
                                         <StackPanel>
                                             <TextBlock Classes="sectionTitle" Text="WORLD RECORD" />
@@ -924,6 +924,28 @@
                                             </Border>
                                         </StackPanel>
                                     </Border>
+                                    <!-- How much faster than your best you have to be to get into a group: the arrows pick which one. -->
+                                    <Border Classes="card tile" ToolTip.ShowDelay="700"
+                                            ToolTip.Tip="KSF puts everyone below the top 10 in a group by how far down the leaderboard they are: group 1 is the best. This is how much faster than your best you have to be to get into the one you pick with the arrows - or the time to beat, before you've finished the map.">
+                                        <StackPanel>
+                                            <DockPanel>
+                                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="4,-5,-8,-5">
+                                                    <Button Theme="{StaticResource IconButton}" Width="22" Height="22" Command="{Binding StepGroupGoalCommand}" CommandParameter="-1"
+                                                            ToolTip.Tip="A better group">
+                                                        <ui:Icon Data="{StaticResource IconChevronLeft}" Width="13" Height="13" />
+                                                    </Button>
+                                                    <Button Theme="{StaticResource IconButton}" Width="22" Height="22" Command="{Binding StepGroupGoalCommand}" CommandParameter="1"
+                                                            ToolTip.Tip="An easier group">
+                                                        <ui:Icon Data="{StaticResource IconChevronRight}" Width="13" Height="13" />
+                                                    </Button>
+                                                </StackPanel>
+                                                <TextBlock Classes="sectionTitle" Text="{Binding GroupGoalTitle}" TextTrimming="CharacterEllipsis" />
+                                            </DockPanel>
+                                            <TextBlock Classes="numbers" Classes.reached="{Binding GroupGoalReached}" Text="{Binding GroupGoalTime}" FontSize="31" FontWeight="SemiBold" Margin="0,10,0,0" />
+                                            <TextBlock Text="{Binding GroupGoalDetail}" FontSize="13" TextTrimming="CharacterEllipsis" Margin="0,4,0,0" />
+                                            <TextBlock Classes="muted" Text="{Binding GroupGoalNote}" Margin="0,2,0,0" IsVisible="{Binding Layout.IsAdvanced}" />
+                                        </StackPanel>
+                                    </Border>
                                     <Border Classes="card tile" ToolTip.ShowDelay="700"
                                             ToolTip.Tip="Finishes count the moment you finish. Attempts and time on the map are KSF's own counts - ksf.surf updates them a few minutes later, so they can tick up while you stand still.">
                                         <StackPanel>
@@ -933,7 +955,7 @@
                                             <TextBlock Classes="muted" Text="{Binding Playtime}" Margin="0,2,0,0" IsVisible="{Binding Layout.IsAdvanced}" />
                                         </StackPanel>
                                     </Border>
-                                </UniformGrid>
+                                </ui:TileRows>
                             </ContentControl>
 
                             <!-- your times: the map, every stage and every bonus - time, gap to the record, your place on each leaderboard -->
@@ -1268,14 +1290,21 @@
                                                                 <TextBlock Text="YOU'RE HERE" Foreground="{StaticResource AccentBrush}" FontFamily="{StaticResource DisplayFont}"
                                                                            FontSize="10.5" FontWeight="SemiBold" IsVisible="{Binding IsYours}" />
                                                             </StackPanel>
-                                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                                                <Border CornerRadius="5" Padding="6,1" Background="{Binding TierSoftBrush}" VerticalAlignment="Center">
+                                                            <DockPanel Grid.Column="1" VerticalAlignment="Center">
+                                                                <Border DockPanel.Dock="Left" CornerRadius="5" Padding="6,1" Background="{Binding TierSoftBrush}" VerticalAlignment="Center">
                                                                     <TextBlock Text="{Binding Tier}" Foreground="{Binding TierBrush}" FontSize="11.5" FontWeight="SemiBold" FontFamily="{StaticResource DisplayFont}" />
                                                                 </Border>
-                                                                <TextBlock Text="{Binding Map}" Margin="8,0,0,0" FontSize="13" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                                                <ui:Icon Data="{StaticResource IconStar}" Filled="True" Foreground="{StaticResource StarBrush}" Width="11" Height="11"
-                                                                         Margin="7,0,0,0" IsVisible="{Binding IsSaved}" />
-                                                            </StackPanel>
+                                                                <StackPanel Margin="8,0,0,0" VerticalAlignment="Center">
+                                                                    <!-- The star right after the name, which gives way when there isn't room. -->
+                                                                    <DockPanel HorizontalAlignment="Left">
+                                                                        <ui:Icon DockPanel.Dock="Right" Data="{StaticResource IconStar}" Filled="True" Foreground="{StaticResource StarBrush}" Width="11" Height="11"
+                                                                                 Margin="7,0,0,0" IsVisible="{Binding IsSaved}" />
+                                                                        <TextBlock Text="{Binding Map}" FontSize="13" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                                    </DockPanel>
+                                                                    <!-- linear or staged (and how many stages and bonuses) -->
+                                                                    <TextBlock Classes="muted" Text="{Binding Kind}" FontSize="11" />
+                                                                </StackPanel>
+                                                            </DockPanel>
                                                             <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="10,0,0,0" VerticalAlignment="Center">
                                                                 <ui:Icon Data="{StaticResource IconUsers}" Foreground="{StaticResource Text2Brush}" Width="13" Height="13" />
                                                                 <TextBlock Classes="numbers" Text="{Binding Players}" Margin="6,0,0,0" FontSize="13.5" />

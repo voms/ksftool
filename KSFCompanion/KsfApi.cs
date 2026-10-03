@@ -443,6 +443,23 @@ namespace KsfCompanion
             return top;
         }
 
+        /// <summary>Whoever is at <paramref name="rank"/> on a map's (or a stage's or bonus's) leaderboard; null past its end.</summary>
+        public async Task<WorldRecord> GetRecordAtRankAsync(string map, int zone, int rank, string game, int style)
+        {
+            // The last number in this URL is the rank the page starts at (20 rows from there).
+            var json = await GetJsonAsync($"/api/maps/{Uri.EscapeDataString(map)}/records/zone/{zone}/{rank}?game={Uri.EscapeDataString(game)}&mode={style}").ConfigureAwait(false);
+            var rows = ParseLeaderboard(json).ToList();
+            return rows.FirstOrDefault(r => r.Rank == rank) ?? rows.FirstOrDefault(r => r.Rank > rank);
+        }
+
+        /// <summary>How many players have finished a map: what that player's record there says (null if they have none).</summary>
+        public async Task<int?> GetTotalRanksAsync(string map, string steamId, string game, int style)
+        {
+            var report = new MapReport();
+            ParsePersonal(await GetJsonAsync($"/api/players/{Uri.EscapeDataString(steamId)}/records/map/{Uri.EscapeDataString(map)}?game={Uri.EscapeDataString(game)}&mode={style}").ConfigureAwait(false), report);
+            return report.Main?.TotalRanks;
+        }
+
         /// <summary>Every KSF server with its current map and players (what ksf.surf/connect shows).</summary>
         public async Task<List<KsfServer>> GetServersAsync(string game)
         {

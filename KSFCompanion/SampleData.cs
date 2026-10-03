@@ -63,6 +63,12 @@ namespace KsfCompanion
 
             vm.ShowLoading(info.Name, live: true);
             vm.ShowReport(report, saved: false);
+            // The group tile: the next group up from yours, and the time at the end of it.
+            vm.ShowGroupGoal(new GroupGoal
+            {
+                Group = 2, Total = 3118, FirstRank = KsfGroups.FirstRank(2, 3118), LastRank = KsfGroups.LastRank(2, 3118),
+                Cutoff = 228.604, YourTime = 231.917, YourRank = 412, YourGroup = 3,
+            });
             vm.SetCurrentZone(4);
             vm.MapImage = Picture(1600, 900, 0);
             vm.AmbientImage = Picture(40, 22, 0);
@@ -152,7 +158,8 @@ namespace KsfCompanion
                     Map = i == 0 ? "surf_sample" : Maps[i * 2 % Maps.Length],
                     Tier = i == 0 ? 4 : 1 + i * 3 % 7,
                     IsLinear = i % 3 == 1,
-                    StageCount = i % 3 == 1 ? 0 : 6,
+                    StageCount = i % 3 == 1 ? 3 : 6,
+                    BonusCount = i % 4,
                     PlayerCount = Math.Max(0, 14 - i * 2 + i % 3),
                     TimeLeftSeconds = 300 + i * 197 % 1900,
                     TimeLimitMinutes = 60,

@@ -90,10 +90,12 @@ It runs on X11 and on Wayland desktops (through XWayland).
 ### Dashboard
 ![Dashboard](docs/dashboard-boreas.png)
 
-- **Live times:** your stage and bonus times appear as soon as you finish, with the gap to the record.
+- **Live times:** your stage and bonus times appear as soon as you finish, with the gap to the record. Times are cut off
+  at the millisecond like the game shows them.
+- **Groups:** how much faster than your best you have to be to get into the next KSF group, or the one you pick.
 - **Map info:** see the map you're on, its tier, the top 10, and the time left (including extends).
 - **Your rank:** see your KSF title, rank and points on 66 and 100 tick.
-- **Servers:** see every KSF server, who's on, and the map, and join in one click.
+- **Servers:** see every KSF server, who's on, and the map (linear or staged), and join in one click.
 - **Play later:** press F5 in game to save a map for later.
 
 ### Nominate
