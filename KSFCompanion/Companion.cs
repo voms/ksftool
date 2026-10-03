@@ -176,6 +176,8 @@ namespace KsfCompanion
         readonly Dictionary<string, (DateTime At, WorldRecord Row)> groupCutoffs = new Dictionary<string, (DateTime, WorldRecord)>(StringComparer.OrdinalIgnoreCase);
         readonly Dictionary<string, (DateTime At, int Total)> leaderboardSizes = new Dictionary<string, (DateTime, int)>(StringComparer.OrdinalIgnoreCase);
         string loadingGroupCutoff;
+        // The group the tile shows (the arrows step from it).
+        int shownGroupGoal = KsfGroups.Count;
         string lastLocalFinish;
         DateTime lastLocalFinishAt;
         readonly DateTime companionStartedAt = DateTime.Now;
@@ -2123,31 +2125,11 @@ namespace KsfCompanion
             UpdateGroupGoal();
         }
 
-        /// <summary>The group you picked on the group tile (0 = the top 10), or null: the next one up from yours.</summary>
-        int? PickedGroupGoal()
-        {
-            var value = settings.Get("group_goal");
-            if (string.Equals(value, "top10", StringComparison.OrdinalIgnoreCase) || value == "0") return 0;
-            return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var group) && group >= 1 && group <= KsfGroups.Count
-                ? group : (int?)null;
-        }
-
-        /// <summary>The group the tile is about: your pick, or the next one up from where your best puts you (group 6 before you've finished).</summary>
-        int GroupGoalNow()
-        {
-            if (PickedGroupGoal() is int picked) return picked;
-            var me = report?.Main;
-            if (me?.Time == null) return KsfGroups.Count;
-            var yours = me.Group is int group && group >= 0 && group <= KsfGroups.Count ? group
-                : me.Rank is int rank && me.TotalRanks is int total ? KsfGroups.Of(rank, total) : null;
-            return yours is int g ? Math.Max(0, g - 1) : KsfGroups.Count;
-        }
-
         /// <summary>The arrows on the group tile: -1 = a better group (down to the top 10), 1 = an easier one.</summary>
         void StepGroupGoal(object parameter)
         {
             if (!int.TryParse(parameter as string, NumberStyles.Integer, CultureInfo.InvariantCulture, out var step)) return;
-            var goal = Math.Max(0, Math.Min(KsfGroups.Count, GroupGoalNow() + Math.Sign(step)));
+            var goal = Math.Max(0, Math.Min(KsfGroups.Count, shownGroupGoal + Math.Sign(step)));
             settings.Set("group_goal", goal == 0 ? "top10" : goal.ToString(CultureInfo.InvariantCulture));
             UpdateGroupGoal();
         }
@@ -2163,25 +2145,15 @@ namespace KsfCompanion
             var me = r.Main;
             var sizeKey = $"{r.Game}|{KsfStyle}|{r.Info.Name}";
             var total = me?.TotalRanks ?? (leaderboardSizes.TryGetValue(sizeKey, out var size) && DateTime.Now - size.At < TimeSpan.FromMinutes(30) ? size.Total : 0);
-            var goal = new GroupGoal
-            {
-                Group = GroupGoalNow(),
-                Total = total,
-                YourTime = me?.Time,
-                // A time you just set isn't ranked yet: it's compared by time instead.
-                YourRank = me?.Unsynced == true ? null : me?.Rank,
-                YourGroup = me?.Time == null || me.Unsynced ? null
-                    : me.Group is int group && group >= 0 && group <= KsfGroups.Count ? group : me.Rank is int rank && total > 0 ? KsfGroups.Of(rank, total) : null,
-            };
-            goal.FirstRank = KsfGroups.FirstRank(goal.Group, total);
-            goal.LastRank = KsfGroups.LastRank(goal.Group, total);
+            var goal = GroupGoal.For(r, GroupGoal.Picked(settings.Get("group_goal")), total);
+            shownGroupGoal = goal.Group;
             if (total == 0 && r.Wr != null)
             {
                 // You haven't finished it: the record holder's own record says how many have.
                 goal.Loading = true;
                 _ = LoadGroupCutoffAsync(r, sizeKey, null);
             }
-            else if (goal.LastRank is int last && !(goal.YourRank <= last))
+            else if (goal.NeedsCutoff && goal.LastRank is int last)
             {
                 var key = $"{sizeKey}|{last}";
                 // The top 10 is on show already.

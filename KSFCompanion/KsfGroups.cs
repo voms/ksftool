@@ -85,5 +85,40 @@ namespace KsfCompanion
         /// <summary>Your group now: 0 = the top 10, 1-6, null = none.</summary>
         public int? YourGroup;
         public bool Loading;
+
+        /// <summary>The time at the end of the group is needed: there is an end, and your best isn't in it already.</summary>
+        public bool NeedsCutoff => LastRank is int last && !(YourRank <= last);
+
+        /// <summary>The group_goal setting: 0 for the top 10, 1-6, or null for auto (the next one up from yours).</summary>
+        public static int? Picked(string setting)
+        {
+            if (string.Equals(setting, "top10", System.StringComparison.OrdinalIgnoreCase) || setting == "0") return 0;
+            return int.TryParse(setting, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var group)
+                && group >= 1 && group <= KsfGroups.Count ? group : (int?)null;
+        }
+
+        /// <summary>
+        /// The group tile for a map: the group <paramref name="picked"/>, or else the next one up from where your best
+        /// puts you (group 6 before you've finished, or when you're in none), on a leaderboard of <paramref name="total"/>.
+        /// </summary>
+        public static GroupGoal For(MapReport r, int? picked, int total)
+        {
+            var me = r.Main;
+            // Where ksf.surf has your best (a time you've just set isn't ranked yet: it's compared by time instead).
+            int? ranked = me?.Time == null ? null
+                : me.Group is int group && group >= 0 && group <= KsfGroups.Count ? group
+                : me.Rank is int rank && total > 0 ? KsfGroups.Of(rank, total) : null;
+            var goal = new GroupGoal
+            {
+                Group = picked ?? (ranked is int g ? System.Math.Max(0, g - 1) : KsfGroups.Count),
+                Total = total,
+                YourTime = me?.Time,
+                YourRank = me?.Unsynced == true ? null : me?.Rank,
+                YourGroup = me?.Unsynced == true ? null : ranked,
+            };
+            goal.FirstRank = KsfGroups.FirstRank(goal.Group, total);
+            goal.LastRank = KsfGroups.LastRank(goal.Group, total);
+            return goal;
+        }
     }
 }

@@ -243,6 +243,17 @@ namespace KsfCompanion
             }
             vm.ShowLoading(map, live: true);
             vm.ShowReport(report, later.Contains(map));
+            if (report.IsOnKsf)
+            {
+                // The group tile: the group set in settings.ini (or the next one up from yours), and the time at its end.
+                var total = report.Main?.TotalRanks
+                    ?? (report.Wr?.SteamId is string holder ? api.GetTotalRanksAsync(report.Info.Name, holder, game, style).GetAwaiter().GetResult() : null) ?? 0;
+                var goal = GroupGoal.For(report, GroupGoal.Picked(settings.Get("group_goal")), total);
+                if (goal.NeedsCutoff && goal.LastRank is int last)
+                    goal.Cutoff = goal.Group == 0 && report.Top.Count >= last ? report.Top[last - 1].Time
+                        : api.GetRecordAtRankAsync(report.Info.Name, 0, last, game, style).GetAwaiter().GetResult()?.Time;
+                vm.ShowGroupGoal(goal);
+            }
             // KSFC_PREVIEW_STAGE=3 shows stage 3 as the one you're on (31 = bonus 1).
             if (int.TryParse(Environment.GetEnvironmentVariable("KSFC_PREVIEW_STAGE"), out var onZone)) vm.SetCurrentZone(onZone);
             // The leaderboard follows a bonus you're on, as in the app; KSFC_PREVIEW_LEADER=2 picks stage 2's instead.

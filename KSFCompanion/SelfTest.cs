@@ -162,6 +162,16 @@ namespace KsfCompanion
             Check("where a group starts", KsfGroups.FirstRank(1, 465) == 11 && KsfGroups.FirstRank(4, 465) == 61 && KsfGroups.FirstRank(0, 465) == 1);
             Check("a rank's group", KsfGroups.Of(87, 465) == 4 && KsfGroups.Of(7, 465) == 0 && KsfGroups.Of(313, 465) == 6 && KsfGroups.Of(314, 465) == null);
             Check("a map only the top 10 have finished has no groups", KsfGroups.LastRank(1, 10) == null && KsfGroups.LastRank(0, 7) == 7);
+
+            // The group tile: the group you pick, or the next one up from yours.
+            Check("group_goal in settings.ini", GroupGoal.Picked("auto") == null && GroupGoal.Picked("top10") == 0 && GroupGoal.Picked("3") == 3 && GroupGoal.Picked("9") == null);
+            var bugs = new MapReport { Info = new MapInfo { Name = "surf_bugs" } };
+            var unfinished = GroupGoal.For(bugs, null, 465);
+            Check("before you've finished: group 6, and the time at its end", unfinished.Group == 6 && unfinished.LastRank == 313 && unfinished.NeedsCutoff);
+            bugs.Zones.Add(new ZoneRecord { ZoneId = 0, Time = 38.475, Rank = 87, TotalRanks = 465, Group = 4 });
+            var next = GroupGoal.For(bugs, null, 465);
+            Check("in group 4: group 3 is next", next.Group == 3 && next.FirstRank == 36 && next.LastRank == 60 && next.NeedsCutoff);
+            Check("one you're in already needs no lookup", !GroupGoal.For(bugs, 5, 465).NeedsCutoff && GroupGoal.For(bugs, 5, 465).YourGroup == 4);
         }
 
         static void Config(string root)
@@ -466,6 +476,14 @@ namespace KsfCompanion
                         File.Exists(png) ? new FileInfo(png).Length + " bytes" : "no picture");
                 }
             }
+
+            // The group tile: your best against the time at the end of the group.
+            var tile = new DashboardViewModel();
+            tile.ShowGroupGoal(new GroupGoal { Group = 3, Total = 465, FirstRank = 36, LastRank = 60, Cutoff = 37.696815, YourTime = 38.475, YourRank = 87, YourGroup = 4 });
+            Check("the group tile says how much faster", tile.GroupGoalTitle == "TO GROUP 3" && tile.GroupGoalTime == "-0.779" && tile.GroupGoalDetail == "beat 0:37.696"
+                && tile.GroupGoalNote == "ranks 36-60 of 465", $"{tile.GroupGoalTitle} / {tile.GroupGoalTime} / {tile.GroupGoalDetail} / {tile.GroupGoalNote}");
+            tile.ShowGroupGoal(new GroupGoal { Group = 4, Total = 465, FirstRank = 61, LastRank = 100, YourTime = 38.475, YourRank = 87, YourGroup = 4 });
+            Check("or that you're in it", tile.GroupGoalReached && tile.GroupGoalTime == "IN" && tile.GroupGoalDetail == "you're in it at #87", tile.GroupGoalDetail);
 
             // Hiding a part (Layout[...] bindings) and the Simple view reach the window.
             var model = SampleData.Dashboard();
