@@ -59,6 +59,14 @@ namespace KsfCompanion
         public static string ServerCommands(Settings settings) => string.Join("; ",
             settings.Get("server_commands").Split(';').Select(c => c.Trim()).Where(c => SafeCommand.IsMatch(c)).Take(4));
 
+        /// <summary>The server_commands as you'd type them in chat: "sm_m; sm_pr" is "/m and /pr".</summary>
+        public static string ServerCommandsInChat(Settings settings)
+        {
+            var chat = ServerCommands(settings).Split(';').Select(c => c.Trim()).Where(c => c.Length > 0)
+                .Select(c => "/" + (c.StartsWith("sm_", StringComparison.OrdinalIgnoreCase) ? c.Substring(3) : c)).ToList();
+            return chat.Count <= 1 ? chat.FirstOrDefault() ?? "KSF's commands" : string.Join(", ", chat.Take(chat.Count - 1)) + " and " + chat[chat.Count - 1];
+        }
+
         public void Install(Settings settings)
         {
             var keys = KeyNames.From(settings);
@@ -123,15 +131,22 @@ namespace KsfCompanion
         public void WriteList(IList<string> lines) => Write("ksf_later.cfg", EchoBlock(lines, separator: true));
         public void WriteMessage(IList<string> lines) => Write("ksf_msg.cfg", EchoBlock(lines, separator: false));
 
-        // Only aliases and binds, so KSF Companion can also exec it in a game that is already running.
+        // Only aliases and binds, so KSF Companion can also exec it in a game that is already running. Once the console
+        // is open the game repeats a held key's bind (it only ignores key repeat in the game itself), so the card and the
+        // list each print once per press: the first + switches its own _go alias off, and letting go switches it back on.
         static string CompanionCfg(KeyNames keys) => string.Join("\n",
             "// KSF Companion in-game keys. This file is rewritten every time KSF Companion starts;",
             "// change the keys in ~/.config/ksf-companion/settings.ini (or on the Binds page) instead.",
             $"alias ksf_save \"echo {SaveMarker}; play buttons/blip1.wav\"",
-            "alias +ksf_card \"exec ksf_card; showconsole\"",
-            "alias -ksf_card \"hideconsole; gameui_hide\"",
-            "alias +ksf_list \"exec ksf_later; showconsole\"",
-            "alias -ksf_list \"hideconsole; gameui_hide\"",
+            "alias ksf_held \"\"",
+            "alias ksf_card_show \"exec ksf_card; showconsole; alias ksf_card_go ksf_held\"",
+            "alias ksf_card_go ksf_card_show",
+            "alias +ksf_card \"ksf_card_go\"",
+            "alias -ksf_card \"hideconsole; gameui_hide; alias ksf_card_go ksf_card_show\"",
+            "alias ksf_list_show \"exec ksf_later; showconsole; alias ksf_list_go ksf_held\"",
+            "alias ksf_list_go ksf_list_show",
+            "alias +ksf_list \"ksf_list_go\"",
+            "alias -ksf_list \"hideconsole; gameui_hide; alias ksf_list_go ksf_list_show\"",
             $"bind \"{keys.Save}\" \"ksf_save\"",
             $"bind \"{keys.Card}\" \"+ksf_card\"",
             $"bind \"{keys.List}\" \"+ksf_list\"",

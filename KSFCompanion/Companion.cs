@@ -53,6 +53,12 @@ namespace KsfCompanion
         static readonly Regex ExtendedLine = new Regex(
             @"^(?:The Map has Been extended for (?<n>\d+) min|Extending map by (?<n>\d+) min|\[SM\] The current map has been extended)",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        // Off a server, a command meant for it says so: Can't "status", not connected
+        static readonly Regex NotConnectedLine = new Regex(@"^Can't ""[^""]+"", not connected", RegexOptions.Compiled);
+        // The server dropped you (kicked, shut down, timed out): "Disconnect: Server shutting down."
+        static readonly Regex DisconnectLine = new Regex(@"^Disconnect: ", RegexOptions.Compiled);
+        // A demo stopped recording: our live one does when you leave the server (and when the map changes).
+        static readonly Regex DemoCompletedLine = new Regex(@"^Completed demo\b", RegexOptions.Compiled);
         // Typing mp_timelimit in the console prints (only there): "mp_timelimit" = "80" ( def. "0" )
         static readonly Regex TimeLimitLine = new Regex(@"^""mp_timelimit"" = ""(?<minutes>\d+(?:\.\d+)?)""", RegexOptions.Compiled);
 
@@ -168,6 +174,11 @@ namespace KsfCompanion
         // on show, and which is being read from ksf.surf right now.
         readonly FinishedMaps finishedMaps;
         string finishedShown, finishedReading;
+        // Which tick rate's finished maps the nominate page marks: picked there (and kept), or else the one you play.
+        string nominateGame;
+        // A read of the map list that stopped (ksf.surf busy or away) carries on from here, a little later.
+        int catalogResumeAt = 1;
+        DateTime nextCatalogTry, nextFinishedTry;
         readonly CancellationTokenSource shutdown = new CancellationTokenSource();
         readonly Dictionary<string, (DateTime At, List<WorldRecord> Top)> zoneTops = new Dictionary<string, (DateTime, List<WorldRecord>)>(StringComparer.OrdinalIgnoreCase);
         string loadingZoneTop;
@@ -176,13 +187,29 @@ namespace KsfCompanion
         readonly Dictionary<string, (DateTime At, WorldRecord Row)> groupCutoffs = new Dictionary<string, (DateTime, WorldRecord)>(StringComparer.OrdinalIgnoreCase);
         readonly Dictionary<string, (DateTime At, int Total)> leaderboardSizes = new Dictionary<string, (DateTime, int)>(StringComparer.OrdinalIgnoreCase);
         string loadingGroupCutoff;
+        // KSF's own group cutoffs on a map (game|style|map), from its leaderboard page on ksf.surf (null: not there).
+        readonly Dictionary<string, (DateTime At, int[] Ends)> groupEnds = new Dictionary<string, (DateTime, int[])>(StringComparer.OrdinalIgnoreCase);
+        string loadingGroupEnds;
+        // Your records on the servers' maps (by game|map), for the progress the server list shows.
+        readonly Dictionary<string, (DateTime At, List<ZoneRecord> Zones)> serverMapRecords = new Dictionary<string, (DateTime, List<ZoneRecord>)>(StringComparer.OrdinalIgnoreCase);
+        bool loadingProgress;
         // The group the tile shows (the arrows step from it).
         int shownGroupGoal = KsfGroups.Count;
         string lastLocalFinish;
         DateTime lastLocalFinishAt;
         readonly DateTime companionStartedAt = DateTime.Now;
-        DateTime sessionStart = DateTime.Now;
+        // The session: time on servers this run of the game (the clock waits in the menu and between servers), and
+        // since when it's counting again (null: waiting).
+        TimeSpan sessionPlayed;
+        DateTime? sessionRunningSince;
         int sessionMaps, sessionFinishes, sessionPbs;
+        // Leaving a server: a hint (our demo stopped, ksf.surf's list lost you) is checked with "status", which off a
+        // server answers that it isn't connected.
+        DateTime? leaveCheckAt;
+        bool listedLastPoll;
+        int unlistedPolls;
+        // You left the server and haven't joined one since (ksf.surf's list still has you there for a minute).
+        bool offServer;
 
         public Companion(Settings settings, bool startHidden)
         {
@@ -203,6 +230,15 @@ namespace KsfCompanion
             vm.RtvCommand = new RelayCommand(_ => RockTheVote());
             vm.ToggleSavedCommand = new RelayCommand(p => ToggleSaved(p as string));
             catalog = new MapCatalog(Path.Combine(Program.CacheDir, "maps.txt"));
+            var pickedTick = settings.Get("nominate_tick");
+            nominateGame = pickedTick == Tick66 || pickedTick == Tick100 ? pickedTick : null;
+            vm.NominateTickCommand = new RelayCommand(p =>
+            {
+                nominateGame = p as string == Tick100 ? Tick100 : Tick66;
+                settings.Set("nominate_tick", nominateGame);
+                nextFinishedTry = DateTime.MinValue;
+                EnsureFinishedMaps();
+            });
             vm.SetMapCatalog(catalog.Maps, loading: false);
             finishedMaps = new FinishedMaps(Path.Combine(Program.CacheDir, "finished-maps.txt"));
             ShowFinishedMaps();
@@ -230,9 +266,8 @@ namespace KsfCompanion
                 if (currentMap != null) _ = FetchAsync(currentMap);
             });
             vm.SetPlayer(settings.Get("last_name"), settings.Get("last_country"), lastRank, lastPoints, settings.Get("last_rank_tick"));
-            // Simple or Advanced, and the parts you've hidden: kept in settings.ini.
-            vm.Layout.Load(settings.Get("hidden").Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries), settings.Get("view") == "simple",
-                settings.GetInt("size", 80, 150) / 100.0);
+            // The parts you've hidden and the size: kept in settings.ini.
+            vm.Layout.Load(settings.Get("hidden").Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries), settings.GetInt("size", 80, 150) / 100.0);
             // Saved once the Size slider stands still (it changes on every step of a drag).
             vm.Layout.Changed += () =>
             {
@@ -265,7 +300,7 @@ namespace KsfCompanion
             // The tray icon (StatusNotifierItem: KDE, Xfce, Cinnamon, waybar...; GNOME with the AppIndicator extension).
             var menu = new NativeMenu();
             statusItem = new NativeMenuItem("Starting...") { IsEnabled = false };
-            var announce = Check("Run !m and !mrank on map load (KSF answers in chat)", settings.GetBool("run_server_commands"),
+            var announce = Check($"Run {GameConfig.ServerCommandsInChat(settings)} on map load (KSF answers in chat)", settings.GetBool("run_server_commands"),
                 on => settings.Set("run_server_commands", on ? "1" : "0"));
             var autoOpen = Check("Open the dashboard when CS:S starts", settings.GetBool("dashboard_on_game_start"),
                 on => settings.Set("dashboard_on_game_start", on ? "1" : "0"));
@@ -487,7 +522,6 @@ namespace KsfCompanion
                 if (layoutToSave)
                 {
                     layoutToSave = false;
-                    settings.Set("view", vm.Layout.IsSimple ? "simple" : "advanced");
                     settings.Set("hidden", string.Join(", ", vm.Layout.Hidden));
                     settings.Set("size", Math.Round(vm.Layout.Scale * 100).ToString(CultureInfo.InvariantCulture));
                 }
@@ -500,6 +534,12 @@ namespace KsfCompanion
             if (DashboardVisible)
             {
                 vm.Tick(now);
+                // The nominate page's lists, if a read of them stopped part way (each waits a while before trying again).
+                if (vm.IsNominatePage)
+                {
+                    EnsureMapCatalog();
+                    EnsureFinishedMaps();
+                }
                 // After a "too many requests" from ksf.surf the regular polls sit out for a bit.
                 var ksfBusy = now < api.BusyUntil;
                 if (now >= nextServerPoll && !pollingServers && !ksfBusy) _ = PollServersAsync();
@@ -517,6 +557,12 @@ namespace KsfCompanion
                 lastTimeLimitCheck = now;
                 // Prints only in the console: "mp_timelimit" = "80" ( def. "0" )
                 _ = PushAsync("mp_timelimit");
+            }
+            if (leaveCheckAt is DateTime leaveCheck && now >= leaveCheck)
+            {
+                leaveCheckAt = null;
+                // "status" goes to the server you're on; off one, the game answers that it isn't connected (LeftServer).
+                if (link == LinkState.Ready && sessionRunningSince != null) _ = PushAsync("status");
             }
             if ((announcePending || cardEchoPending) && !announcing && link == LinkState.Ready && now >= nextAnnounceTry)
             {
@@ -556,7 +602,11 @@ namespace KsfCompanion
                     vm.SetLive(false);
                     vm.SetLiveServer(null, null, null);
                     vm.SetNextMap(null, null);
-                    vm.EndSession();
+                    leaveCheckAt = null;
+                    listedLastPoll = offServer = false;
+                    // The session ends with the game.
+                    PauseSession();
+                    vm.EndSession(sessionPlayed);
                 }
                 return;
             }
@@ -725,10 +775,24 @@ namespace KsfCompanion
             {
                 connectedAddress = connected.Groups["address"].Value;
                 yourServer = null;
+                offServer = false;
+                ResumeSession();
                 var known = servers.FirstOrDefault(s => s.Address == connectedAddress);
                 if (known != null) ChooseTickEarly(known);
                 else _ = LookUpServerAsync(connectedAddress);
                 nextServerPoll = DateTime.MinValue;
+                return;
+            }
+
+            if (NotConnectedLine.IsMatch(line) || DisconnectLine.IsMatch(line))
+            {
+                LeftServer();
+                return;
+            }
+            if (DemoCompletedLine.IsMatch(line))
+            {
+                // Left the server, or just a map change: "status" tells.
+                CheckStillOnServer(4);
                 return;
             }
 
@@ -1070,15 +1134,17 @@ namespace KsfCompanion
         /// </summary>
         async void EnsureMapCatalog()
         {
-            if (catalogLoading) return;
+            if (catalogLoading || DateTime.Now < nextCatalogTry) return;
             var full = catalog.Count == 0 || DateTime.Now - catalog.CompleteAt > TimeSpan.FromDays(7);
             if (!full && DateTime.Now - catalog.ToppedUpAt < TimeSpan.FromHours(12)) return;
             catalogLoading = true;
             vm.SetMapCatalog(catalog.Maps, loading: true);
             var finished = false;
+            // A full read that stopped part way carries on where it stopped.
+            var start = full ? catalogResumeAt : 1;
             try
             {
-                for (int start = 1, pages = 0; start < 3000; start += 10, pages++)
+                for (var pages = 0; start < 3000; start += 10, pages++)
                 {
                     var page = await api.GetMapsPageAsync(start, shutdown.Token);
                     if (page.Count == 0) break;
@@ -1102,6 +1168,13 @@ namespace KsfCompanion
                 {
                     if (full) catalog.MarkComplete();
                     else catalog.MarkToppedUp();
+                    catalogResumeAt = 1;
+                }
+                else
+                {
+                    // ksf.surf was busy or away: the rest comes a little later (while the nominate page is open).
+                    if (full) catalogResumeAt = start;
+                    nextCatalogTry = DateTime.Now.AddSeconds(45);
                 }
                 catalog.Save();
                 catalogLoading = false;
@@ -1110,13 +1183,16 @@ namespace KsfCompanion
             }
         }
 
-        string FinishedKey() => FinishedMaps.Key(CurrentSteamId(), Game, KsfStyle);
+        /// <summary>The tick rate the nominate page marks finished maps for.</summary>
+        string NominateGame => nominateGame ?? Game;
+        string FinishedKey() => FinishedMaps.Key(CurrentSteamId(), NominateGame, KsfStyle);
 
-        /// <summary>The nominate page marks the maps you've finished on the tick rate you're playing.</summary>
+        /// <summary>The nominate page marks the maps you've finished on its tick rate.</summary>
         void ShowFinishedMaps()
         {
             var key = FinishedKey();
             finishedShown = key;
+            vm.NominateTick = NominateGame;
             vm.SetFinishedMaps(finishedMaps.Of(key), loading: key != null && key == finishedReading);
         }
 
@@ -1128,12 +1204,12 @@ namespace KsfCompanion
         async void EnsureFinishedMaps()
         {
             var steamId = CurrentSteamId();
-            var game = Game;
+            var game = NominateGame;
             var style = KsfStyle;
             var key = FinishedMaps.Key(steamId, game, style);
-            if (key == null || finishedReading != null || DateTime.Now - finishedMaps.ReadAt(key) < TimeSpan.FromHours(20))
+            if (key == null || finishedReading != null || DateTime.Now < nextFinishedTry || DateTime.Now - finishedMaps.ReadAt(key) < TimeSpan.FromHours(20))
             {
-                ShowFinishedMaps();
+                if (key != finishedShown) ShowFinishedMaps();
                 return;
             }
             finishedReading = key;
@@ -1159,6 +1235,8 @@ namespace KsfCompanion
             finally
             {
                 if (complete) finishedMaps.MarkRead(key);
+                // Stopped part way (ksf.surf busy): read it again in a while.
+                else nextFinishedTry = DateTime.Now.AddMinutes(1);
                 finishedMaps.Save();
                 finishedReading = null;
                 ShowFinishedMaps();
@@ -1471,18 +1549,78 @@ namespace KsfCompanion
         void UpdateSession()
         {
             if (gamePid == 0) return;
-            Program.Trace($"session: {sessionMaps} maps, {sessionFinishes} finishes, {sessionPbs} PBs since {sessionStart:HH:mm:ss}");
-            vm.SetSession(sessionStart, sessionMaps, sessionFinishes, sessionPbs);
+            Program.Trace($"session: {sessionMaps} maps, {sessionFinishes} finishes, {sessionPbs} PBs, "
+                          + Format.Duration(SessionPlayed(DateTime.Now).TotalSeconds) + " on servers" + (sessionRunningSince == null ? " (paused)" : ""));
+            vm.SetSession(sessionPlayed, sessionRunningSince, sessionMaps, sessionFinishes, sessionPbs);
         }
 
-        /// <summary>A session is one run of the game: its clock starts when CS:S does.</summary>
+        TimeSpan SessionPlayed(DateTime now) => sessionPlayed + (sessionRunningSince is DateTime since && now > since ? now - since : TimeSpan.Zero);
+
+        /// <summary>A session is one run of the game; its clock runs while you're on a server and waits in between.</summary>
         void StartSession(DateTime start)
         {
-            sessionStart = start;
-            // Started after the game and it's already on a map: that one counts. A fresh game hasn't joined anything yet.
-            sessionMaps = currentMap != null && start < companionStartedAt ? 1 : 0;
+            // Started after the game and it's already on a map: that one counts, from when the game started. A fresh
+            // game is in its menu: the clock waits for a server.
+            var onMap = currentMap != null && start < companionStartedAt;
+            sessionPlayed = TimeSpan.Zero;
+            sessionRunningSince = onMap ? start : (DateTime?)null;
+            sessionMaps = onMap ? 1 : 0;
             sessionFinishes = sessionPbs = 0;
             UpdateSession();
+        }
+
+        /// <summary>On a server (again): the session's clock runs.</summary>
+        void ResumeSession()
+        {
+            if (gamePid == 0 || sessionRunningSince != null) return;
+            sessionRunningSince = DateTime.Now;
+            UpdateSession();
+        }
+
+        /// <summary>Off a server (or the game closed): the session's clock waits.</summary>
+        void PauseSession()
+        {
+            if (sessionRunningSince == null) return;
+            sessionPlayed = SessionPlayed(DateTime.Now);
+            sessionRunningSince = null;
+            UpdateSession();
+        }
+
+        /// <summary>Asks the game in a moment whether it's still on a server (see LeftServer).</summary>
+        void CheckStillOnServer(double seconds)
+        {
+            if (offServer) return;
+            var at = DateTime.Now.AddSeconds(seconds);
+            if (leaveCheckAt == null || at < leaveCheckAt) leaveCheckAt = at;
+        }
+
+        /// <summary>
+        /// You left the server - the game is in its menu. The map stays on show (as the last map), the session's clock
+        /// waits until you join a server again, and what was live about the server goes.
+        /// </summary>
+        void LeftServer()
+        {
+            leaveCheckAt = null;
+            listedLastPoll = false;
+            if (gamePid == 0 || offServer) return;
+            Program.Trace("left the server");
+            offServer = true;
+            PauseSession();
+            yourServer = null;
+            onKsfServer = listedAsSpectating = false;
+            connectedAddress = nextMapName = hudRequestedFor = null;
+            announcePending = cardEchoPending = false;
+            currentZone = null;
+            timeLimitCheckAt = null;
+            clock.Reset();
+            vm.SetCurrentZone(null);
+            vm.SetServerLine(null);
+            vm.SetLiveServer(null, null, null);
+            vm.SetNextMap(null, null);
+            vm.SetLive(false);
+            vm.Tick(DateTime.Now);
+            if (servers.Count > 0) vm.SetServers(servers, null, SavedMaps());
+            UpdateStatus();
         }
 
         /// <summary>The timer's "08:23:89" is minutes:seconds:hundredths (hours come first on very long runs).</summary>
@@ -1519,6 +1657,7 @@ namespace KsfCompanion
         /// <summary>The game just (re)started and is sitting in the main menu.</summary>
         void OnGameStarted()
         {
+            PauseSession();
             currentMap = null;
             report = null;
             inGameAt = null;
@@ -1651,7 +1790,12 @@ namespace KsfCompanion
             zoneFetch?.Cancel();
             pinnedLeaderZone = null;
             followedLeaderZone = 0;
-            if (justJoined) sessionMaps++;
+            if (justJoined)
+            {
+                sessionMaps++;
+                offServer = false;
+                ResumeSession();
+            }
             UpdateSession();
             vm.ShowLoading(map, live: gamePid != 0 || justJoined);
             vm.SetNextMap(null, null);
@@ -1947,8 +2091,24 @@ namespace KsfCompanion
                         break;
                     }
                 }
+                // ksf.surf's list stopped listing you: maybe you left the server. It lags a minute behind, so "status" tells
+                // for sure (once); without the game's console, two polls in a row do.
+                if (gamePid != 0 && steamId != null && !offServer)
+                {
+                    if (listedOn != null)
+                    {
+                        listedLastPoll = true;
+                        unlistedPolls = 0;
+                    }
+                    else if (listedLastPoll && link == LinkState.Ready)
+                    {
+                        listedLastPoll = false;
+                        CheckStillOnServer(0);
+                    }
+                    else if (listedLastPoll && ++unlistedPolls >= 2) LeftServer();
+                }
                 // The address from "status" is exact; ksf.surf's player lists can lag a minute behind a server switch.
-                yourServer = gamePid == 0 ? null
+                yourServer = gamePid == 0 || offServer ? null
                     : connectedAddress != null ? list.FirstOrDefault(s => s.Address == connectedAddress)
                     : listedOn;
                 var rankTick = listedOn?.Game == Tick100 ? "100T" : "66T";
@@ -1965,7 +2125,9 @@ namespace KsfCompanion
                 // Only trust it for the tick rate when it's clearly up to date (the hostname from "status" usually settles this first).
                 if (yourServer != null && (connectedAddress != null || string.Equals(yourServer.Map, currentMap, StringComparison.OrdinalIgnoreCase)))
                     SetDetectedGame(yourServer.Game);
+                vm.YourSteamId = steamId;
                 vm.SetServers(list, yourServer?.Address, SavedMaps());
+                _ = LoadServerProgressAsync();
                 vm.SetServerLine(yourServer != null && string.Equals(yourServer.Map, currentMap, StringComparison.OrdinalIgnoreCase) ? yourServer : null);
                 // ksf.surf's sample says when the map started (even from before an extension) and its time limit then.
                 if (yourServer != null && string.Equals(yourServer.Map, currentMap, StringComparison.OrdinalIgnoreCase))
@@ -2123,6 +2285,53 @@ namespace KsfCompanion
             catch (IOException) { }
             vm.ShowReport(report, saved);
             UpdateGroupGoal();
+            ShowMapProgress(report);
+        }
+
+        /// <summary>Your progress on the map on show, for its server in the list (with the times you've just set, too).</summary>
+        void ShowMapProgress(MapReport r)
+        {
+            if (r?.Info == null || r.SteamId == null || r.PersonalError != null) return;
+            vm.SetMapProgress(r.Game, r.Info.Name, MapProgress.From(r.Zones, r.Info.IsLinear, r.Info.StageCount, r.Info.BonusCount));
+        }
+
+        /// <summary>
+        /// Your progress on each server's map - your time, and which stages and bonuses you've done - for the server
+        /// list: one lookup per map (in the background, kept 20 minutes), and the map on show from the dashboard.
+        /// </summary>
+        async Task LoadServerProgressAsync()
+        {
+            var steamId = CurrentSteamId();
+            if (steamId == null || loadingProgress) return;
+            loadingProgress = true;
+            try
+            {
+                foreach (var server in servers.ToList())
+                {
+                    if (report != null && report.Game == server.Game && string.Equals(report.Info?.Name, server.Map, StringComparison.OrdinalIgnoreCase))
+                    {
+                        ShowMapProgress(report);
+                        if (report.PersonalError == null) continue;
+                    }
+                    var key = CacheKey(server.Game, server.Map);
+                    if (!serverMapRecords.TryGetValue(key, out var known) || DateTime.Now - known.At > TimeSpan.FromMinutes(20))
+                    {
+                        if (DateTime.Now < api.BusyUntil) break;
+                        known = (DateTime.Now, await api.GetPlayerZonesAsync(server.Map, steamId, server.Game, KsfStyle, shutdown.Token));
+                        serverMapRecords[key] = known;
+                    }
+                    vm.SetMapProgress(server.Game, server.Map, MapProgress.From(known.Zones, server.IsLinear, server.StageCount, server.BonusCount));
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) when (IsNetworkError(ex))
+            {
+                Program.Trace("server list progress: " + ex.GetBaseException().Message);
+            }
+            finally
+            {
+                loadingProgress = false;
+            }
         }
 
         /// <summary>The arrows on the group tile: -1 = a better group (down to the top 10), 1 = an easier one.</summary>
@@ -2135,8 +2344,9 @@ namespace KsfCompanion
         }
 
         /// <summary>
-        /// The group tile for the map on show: where that group ends on the map's leaderboard, and the time there -
-        /// looked up on ksf.surf (one request, kept a few minutes) unless your best is in the group already.
+        /// The group tile for the map on show: where that group ends on the map's leaderboard (KSF's own cutoffs from
+        /// ksf.surf), and the time there - looked up on ksf.surf (one request, kept a few minutes) unless your best is
+        /// in the group already.
         /// </summary>
         void UpdateGroupGoal()
         {
@@ -2145,11 +2355,21 @@ namespace KsfCompanion
             var me = r.Main;
             var sizeKey = $"{r.Game}|{KsfStyle}|{r.Info.Name}";
             var total = me?.TotalRanks ?? (leaderboardSizes.TryGetValue(sizeKey, out var size) && DateTime.Now - size.At < TimeSpan.FromMinutes(30) ? size.Total : 0);
-            var goal = GroupGoal.For(r, GroupGoal.Picked(settings.Get("group_goal")), total);
-            shownGroupGoal = goal.Group;
-            if (total == 0 && r.Wr != null)
+            // KSF's cutoffs, read off the map's leaderboard page once in a while; until then (or without them) the same rule worked out.
+            int[] ends = null;
+            var endsPending = false;
+            if (groupEnds.TryGetValue(sizeKey, out var published) && DateTime.Now - published.At < TimeSpan.FromMinutes(30)) ends = published.Ends;
+            else if (DateTime.Now >= api.BusyUntil)
             {
-                // You haven't finished it: the record holder's own record says how many have.
+                endsPending = true;
+                if (loadingGroupEnds != sizeKey) _ = LoadGroupEndsAsync(r, sizeKey);
+            }
+            var goal = GroupGoal.For(r, GroupGoal.Picked(settings.Get("group_goal")), total, ends);
+            shownGroupGoal = goal.Group;
+            if (goal.LastRank == null && endsPending) goal.Loading = true;
+            else if (total == 0 && ends == null && r.Wr != null)
+            {
+                // No cutoffs from ksf.surf and you haven't finished it: the record holder's own record says how many have.
                 goal.Loading = true;
                 _ = LoadGroupCutoffAsync(r, sizeKey, null);
             }
@@ -2166,6 +2386,28 @@ namespace KsfCompanion
                 }
             }
             vm.ShowGroupGoal(goal);
+        }
+
+        /// <summary>KSF's group cutoffs on the map, from its leaderboard page on ksf.surf (kept half an hour; without them, the rule).</summary>
+        async Task LoadGroupEndsAsync(MapReport r, string key)
+        {
+            loadingGroupEnds = key;
+            int[] ends = null;
+            try
+            {
+                ends = await api.GetGroupEndsAsync(r.Info.Name, r.Game, KsfStyle);
+                Program.Trace($"group cutoffs on {r.Info.Name} ({r.Game}): " + (ends != null ? string.Join(", ", ends) : "not on ksf.surf's page - working them out"));
+            }
+            catch (Exception ex) when (IsNetworkError(ex))
+            {
+                Program.Trace($"group cutoffs ({key}): {ex.GetBaseException().Message}");
+            }
+            finally
+            {
+                if (loadingGroupEnds == key) loadingGroupEnds = null;
+            }
+            groupEnds[key] = (DateTime.Now, ends);
+            if (report == r) UpdateGroupGoal();
         }
 
         /// <summary>Looks up the time at <paramref name="rank"/> on the map (or, with no rank, how many have finished it) for the group tile.</summary>

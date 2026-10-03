@@ -443,6 +443,34 @@ namespace KsfCompanion
             return top;
         }
 
+        // ksf.surf's leaderboard pages hand their table the group cutoffs: ..."zone":0,"cutOffs":[10,20,35,60,100,161,313]...
+        static readonly Regex CutOffs = new Regex(@"cutOffs\\?""\s*:\s*\[(?<ends>[\d,\s]*)\]", RegexOptions.Compiled);
+
+        /// <summary>
+        /// KSF's own group cutoffs on a map: the last rank of the top 10 and of groups 1 to 6, as its leaderboard page on
+        /// ksf.surf draws them ([10, 20, 35, 60, 100, 161, 313] on surf_bugs). There's no API for them, so they're read
+        /// off that page. Null when it doesn't have them - and for the other styles, whose page isn't known.
+        /// </summary>
+        public async Task<int[]> GetGroupEndsAsync(string map, string game, int style)
+        {
+            if (style != 0) return null;
+            return ParseGroupEnds(await GetTextAsync(GroupEndsPage(map, game)).ConfigureAwait(false));
+        }
+
+        /// <summary>The cutoffs in a leaderboard page of ksf.surf (null if it has none that make sense).</summary>
+        internal static int[] ParseGroupEnds(string html)
+        {
+            var m = html == null ? Match.Empty : CutOffs.Match(html);
+            if (!m.Success) return null;
+            var ends = m.Groups["ends"].Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(n => int.TryParse(n, NumberStyles.Integer, CultureInfo.InvariantCulture, out var rank) ? rank : -1).ToArray();
+            return KsfGroups.Checked(ends);
+        }
+
+        /// <summary>A map's leaderboard page on ksf.surf (its tick rate as the page names it: 66T or 100T).</summary>
+        internal static string GroupEndsPage(string map, string game) =>
+            $"/maps/{Uri.EscapeDataString(map)}/records?game={(game == "css100t" ? "100T" : "66T")}";
+
         /// <summary>Whoever is at <paramref name="rank"/> on a map's (or a stage's or bonus's) leaderboard; null past its end.</summary>
         public async Task<WorldRecord> GetRecordAtRankAsync(string map, int zone, int rank, string game, int style)
         {
@@ -458,6 +486,18 @@ namespace KsfCompanion
             var report = new MapReport();
             ParsePersonal(await GetJsonAsync($"/api/players/{Uri.EscapeDataString(steamId)}/records/map/{Uri.EscapeDataString(map)}?game={Uri.EscapeDataString(game)}&mode={style}").ConfigureAwait(false), report);
             return report.Main?.TotalRanks;
+        }
+
+        /// <summary>
+        /// A player's records on a map - the map, its stages and its bonuses (none if they haven't played it) - for the
+        /// server list. Paced like the other background lookups.
+        /// </summary>
+        public async Task<List<ZoneRecord>> GetPlayerZonesAsync(string map, string steamId, string game, int style, CancellationToken cancel)
+        {
+            var report = new MapReport();
+            ParsePersonal(await GetPacedAsync($"/api/players/{Uri.EscapeDataString(steamId)}/records/map/{Uri.EscapeDataString(map)}?game={Uri.EscapeDataString(game)}&mode={style}",
+                cancel, background: true), report);
+            return report.Zones;
         }
 
         /// <summary>Every KSF server with its current map and players (what ksf.surf/connect shows).</summary>
@@ -703,17 +743,18 @@ namespace KsfCompanion
             report.PlayerCountry = Json.Str(basic, "country");
             foreach (var z in Json.Objects(Json.Get(root, "records")))
             {
-                var time = Json.Num(z, "surfTime");
+                var time = Json.Num(z, "surfTime") is double t && t > 0 ? t : (double?)null;
                 report.Zones.Add(new ZoneRecord
                 {
                     ZoneId = Json.Int(z, "zoneId") ?? -1,
-                    Time = time > 0 ? time : null,
-                    Rank = Json.Int(z, "rank"),
+                    Time = time,
+                    // Without a time there's no place on the leaderboard (ksf.surf can still send one: 1).
+                    Rank = time == null ? null : Json.Int(z, "rank"),
                     TotalRanks = Json.Int(z, "totalRanks"),
                     Completions = Json.Int(z, "completions"),
                     Attempts = Json.Int(z, "attempts"),
                     PlaytimeSeconds = Json.Num(z, "totalSurfTime"),
-                    Group = Json.Int(z, "group"),
+                    Group = time == null ? null : Json.Int(z, "group"),
                 });
             }
         }

@@ -6,13 +6,10 @@ For Linux: it sends the game its console commands over the game's remote console
 to CS:S's launch options in Steam (the dashboard reminds you until it's there).
 
 The dashboard
-  Simple / Advanced (top right): Simple shows the essentials bigger and cleaner - the numbers
-  without their small print, the top 5, shorter lists; Advanced shows every detail.
   Customize (top right): switch any part of the dashboard off or on - or hover a part and click
   the x on its corner. The rest moves up to fill the space; hide everything on one side and the
   other side gets the whole width. The Size slider in there makes everything smaller or bigger
-  (80% to 150%, the Nominate tab too). All of it is remembered (view, hidden and size in
-  settings.ini).
+  (80% to 150%, the Nominate tab too). All of it is remembered (hidden and size in settings.ini).
 
   - The map you're on: KSF's preview image, tier, stages/bonuses, mapper, rating, which KSF
     server you're on and the next map as soon as KSF announces it.
@@ -33,11 +30,12 @@ The dashboard
     millisecond like the game shows them (10.199, never rounded up to 10.200).
   - Group tile: how much faster than your best you have to be to get into a KSF group - the next
     one up from yours, or the one you pick with its arrows (the top 10, or group 1 to 6; it's
-    remembered). Before you've finished the map it shows the time to beat. KSF puts everyone
-    below the top 10 in a group by how far down the leaderboard they are: group 6 reaches two
-    thirds of the way down, group 5 a third, then 1/6, 1/12, 1/24 and 1/48 for groups 4 to 1 -
-    but groups 1 to 5 reach at least the 20th, 35th, 60th, 100th and 150th place (unless that's
-    past the end of group 6). (KSF doesn't publish this; it was worked out from ksf.surf.)
+    remembered). Before you've finished the map it shows the time to beat. The cutoffs are KSF's
+    own, from the map's leaderboard page on ksf.surf (the "group" lines there). Without them it
+    works them out the way KSF does: everyone below the top 10 is in a group by how far down the
+    leaderboard they are - group 6 reaches two thirds of the way down, group 5 a third, then 1/6,
+    1/12, 1/24 and 1/48 for groups 4 to 1 - but groups 1 to 5 reach at least the 20th, 35th,
+    60th, 100th and 150th place (unless that's past the end of group 6).
   - Leaderboard: the top 10, with you highlighted (and your own row if you're outside the top 10).
     It follows what you're doing: the map's while you're on the map or its stages, a bonus's while
     you're on that bonus. Click a chip above it (MAP, S1, B2, ...) or a row in "your times" to see
@@ -70,14 +68,20 @@ The dashboard
     about 5 s. If the timer prints your stage/bonus times in chat (see the !surftimer options),
     those lines reach KSF Companion instantly and it uses them straight away.
   - LIVE: the KSF server you're on - everyone surfing there, which stage/checkpoint/bonus they're
-    on, their rank and how long they've been on (refreshed every 15 seconds).
-  - This session: how long you've been playing, maps, finishes and new PBs since CS:S started.
+    on, their rank and how long they've been on (refreshed every 15 seconds). It lists 12;
+    "+ 28 more surfing - show everyone" lists them all.
+  - This session: how long you've been on servers, maps, finishes and new PBs since CS:S started.
+    Leave a server and the clock waits (the last map stays on show) until you join one again;
+    closing the game ends the session.
   - Play later: your saved maps with thumbnails. When a KSF server is running one of them it
     says LIVE and gives you a Join button. Hover a map to nominate it (sent straight to the KSF
     server you're on; otherwise "!nominate <map>" is copied for chat), open it on ksf.surf, or
     remove it.
   - KSF servers: every server, its map (linear or staged, with its stages and bonuses), players
-    and time left. Hover one to join it.
+    and time left - and your progress on its map: your time (or "not done") over a bar for each
+    stage (one for the whole map on a linear map) and one for each bonus, green for the ones
+    you've done and red for the rest, like on ksf.surf. Click a server to see everyone on it
+    (in the game or not); hover one to join it.
   - Your recent KSF records (new PRs, groups, map finishes).
   The whole window takes on a faint tint of the map you're on.
   It opens on your second monitor by itself when CS:S starts (without taking focus from the
@@ -114,12 +118,13 @@ The Nominate tab (top of the window)
     come first when you're not searching.
   - Maps you've finished have a green tick with your time on them (hover it for your group and
     points). All / Not done / Done shows every map, only the ones you haven't finished yet, or
-    only the ones you have - on the tick rate you're playing. Which maps you've finished comes from
+    only the ones you have - on the tick rate picked with 66T / 100T (it follows the server
+    you're on until you pick one there). Which maps you've finished comes from
     your ksf.surf profile, read about once a day (it takes a minute or two the first time); maps
     you finish in between get their tick the moment you finish them.
   - Both commands go through the console, so nothing is typed in chat; the server announces the
     votes as usual. The map list is loaded from ksf.surf once and kept for a week (new maps are
-    added twice a day).
+    added twice a day); if ksf.surf is busy part way through, the rest comes a little later.
 
   Live: when you finish a map, your time shows the moment the timer announces it in chat - a new
   PB, first finish or WR gets a big banner with the time you took off and the points you got -
@@ -133,15 +138,18 @@ The Nominate tab (top of the window)
 In the game
   F5          save the current map to your play-later list (you hear a blip)
   hold F6     open the console with the KSF card for this map (also your time, the gap to the
-              record and your rank on every stage and bonus)
+              record and your rank on every stage and bonus) - printed once, however long you
+              hold the key
   hold F7     open the console with your play-later list
   KSF Companion never types in chat, and on its own it only runs console commands that answer in
-  your console ("status" to see which server you're on, "mp_timelimit" for the map's time limit,
+  your console ("status" to see which server you're on - or that you've left it -, "mp_timelimit"
+  for the map's time limit,
   and the demo it reads the timer from). It sends them over the game's remote console (CS:S needs
   -usercon in its launch options for that), on port 27015 of this PC with a password it makes up
   (rcon_port and rcon_password in settings.ini).
-  Tray icon > "Run !m and !mrank on map load" makes it ask KSF for the map info and your rank each
-  map - KSF answers those in chat, so that's off unless you turn it on.
+  Tray icon > "Run /m and /pr on map load" makes it ask KSF for the map info and your time each
+  map - KSF answers those in chat, so that's off unless you turn it on (server_commands in
+  settings.ini picks the commands).
 
 Where things are
   ~/.config/ksf-companion:

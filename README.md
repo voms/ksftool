@@ -92,16 +92,19 @@ It runs on X11 and on Wayland desktops (through XWayland).
 
 - **Live times:** your stage and bonus times appear as soon as you finish, with the gap to the record. Times are cut off
   at the millisecond like the game shows them.
-- **Groups:** how much faster than your best you have to be to get into the next KSF group, or the one you pick.
+- **Groups:** how much faster than your best you have to be to get into the next KSF group, or the one you pick, with
+  KSF's own group cutoffs from ksf.surf.
 - **Map info:** see the map you're on, its tier, the top 10, and the time left (including extends).
 - **Your rank:** see your KSF title, rank and points on 66 and 100 tick.
-- **Servers:** see every KSF server, who's on, and the map (linear or staged), and join in one click.
+- **Servers:** see every KSF server, its map (linear or staged) and your progress on it (your time, and the stages and
+  bonuses you've done). Click a server to see everyone on it, and join in one click.
+- **Session:** time on servers, maps, finishes and PBs. It waits while you're off a server and ends when CS:S closes.
 - **Play later:** press F5 in game to save a map for later.
 
 ### Nominate
 ![Nominate](docs/nominate-boreas.png)
 
-- Search every KSF map (typos are OK), filter by tier, type, or done / not done.
+- Search every KSF map (typos are OK), filter by tier, type, or done / not done on 66 or 100 tick.
 - Nominate or rock the vote in one click.
 
 ### Binds

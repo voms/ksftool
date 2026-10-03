@@ -34,14 +34,10 @@ namespace KsfCompanion.Ui
         internal void Raise() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsShown)));
     }
 
-    /// <summary>
-    /// What's on the dashboard: the parts you haven't hidden (bound as Layout[key], true = shown), and the view -
-    /// Simple (the essentials, bigger and cleaner) or Advanced (every detail).
-    /// </summary>
+    /// <summary>What's on the dashboard: the parts you haven't hidden (bound as Layout[key], true = shown), and how big it's drawn.</summary>
     sealed class DashboardLayout : INotifyPropertyChanged
     {
         readonly HashSet<string> hidden = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        bool simple;
         double scale = 1;
 
         public DashboardLayout()
@@ -66,7 +62,7 @@ namespace KsfCompanion.Ui
         public ObservableCollection<LayoutPart> Parts { get; }
 
         public event PropertyChangedEventHandler PropertyChanged;
-        /// <summary>Something was shown, hidden or switched by you (to save it).</summary>
+        /// <summary>Something was shown, hidden or resized by you (to save it).</summary>
         public event Action Changed;
 
         public bool this[string key]
@@ -79,20 +75,6 @@ namespace KsfCompanion.Ui
                 Changed?.Invoke();
             }
         }
-
-        public bool IsSimple
-        {
-            get => simple;
-            set
-            {
-                if (simple == value) return;
-                simple = value;
-                Raise();
-                Changed?.Invoke();
-            }
-        }
-
-        public bool IsAdvanced => !simple;
 
         /// <summary>How big everything is drawn (1 = normal), from the Size slider in Customize.</summary>
         public double Scale
@@ -118,13 +100,12 @@ namespace KsfCompanion.Ui
         /// <summary>Whether anything on that side (left: the map; right: servers, lists) is still on show.</summary>
         public bool AnyShown(bool left) => Parts.Any(p => p.IsLeft == left && p.Key != "timer" && p.IsShown);
 
-        /// <summary>From settings: the hidden parts, the view and the size, without counting as a change.</summary>
-        public void Load(IEnumerable<string> hiddenKeys, bool simpleView, double size = 1)
+        /// <summary>From settings: the hidden parts and the size, without counting as a change.</summary>
+        public void Load(IEnumerable<string> hiddenKeys, double size = 1)
         {
             hidden.Clear();
             foreach (var key in hiddenKeys.Select(k => k.Trim()).Where(k => Parts.Any(p => p.Key.Equals(k, StringComparison.OrdinalIgnoreCase))))
                 hidden.Add(key);
-            simple = simpleView;
             scale = Math.Round(Math.Max(0.8, Math.Min(1.5, size)), 2);
             Raise();
         }
@@ -140,7 +121,7 @@ namespace KsfCompanion.Ui
         void Raise()
         {
             // "Item" updates every Layout[key] binding (Avalonia's name for a change of the indexer).
-            foreach (var name in new[] { "Item", nameof(IsSimple), nameof(IsAdvanced), nameof(HiddenCount), nameof(HiddenText), nameof(Scale), nameof(ScaleText) })
+            foreach (var name in new[] { "Item", nameof(HiddenCount), nameof(HiddenText), nameof(Scale), nameof(ScaleText) })
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
             foreach (var part in Parts) part.Raise();
         }

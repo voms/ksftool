@@ -66,7 +66,7 @@ namespace KsfCompanion.Ui
                 Relayout(e.NewSize.Width);
                 RememberNormal();
             };
-            // Showing, hiding or switching Simple/Advanced lays the dashboard out again.
+            // Showing, hiding or resizing parts lays the dashboard out again.
             vm.Layout.PropertyChanged += (s, e) => Relayout(Bounds.Width);
             PositionChanged += (s, e) =>
             {
@@ -176,16 +176,16 @@ namespace KsfCompanion.Ui
 
         /// <summary>
         /// Two columns when there is room and both sides have something on show, one scrolling column otherwise. On a
-        /// big screen everything is scaled up (it's laid out for about 1500 px across), a bit more in the Simple view.
+        /// big screen everything is scaled up (it's laid out for about 1500 px across).
         /// </summary>
         internal void Relayout(double width)
         {
             if (!(width > 0)) return;
             // The title bar isn't scaled: it has the window's own width.
             PlayerChip.IsVisible = width >= 1200;
-            // Size (Customize): everything on the page drawn bigger or smaller - the Simple view a touch bigger.
+            // Size (Customize): everything on the page drawn bigger or smaller.
             Zoom(NominateZoom, vm.Layout.Scale);
-            var zoom = vm.Layout.Scale * (vm.Layout.IsSimple ? 1.06 : 1);
+            var zoom = vm.Layout.Scale;
             Zoom(ColumnsZoom, zoom);
             width /= zoom;
 

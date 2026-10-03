@@ -52,8 +52,7 @@
                             </Panel>
                             <TextBlock Grid.Column="3" Classes="numbers" Text="{Binding Gap}" Foreground="{Binding GapBrush}" FontSize="13"
                                        HorizontalAlignment="Right" />
-                            <!-- The Simple view leaves out the leaderboard place (the map's is on "your best" above). -->
-                            <Panel Grid.Column="4" MinWidth="108" IsVisible="{Binding $parent[Window].DataContext.Layout.IsAdvanced}">
+                            <Panel Grid.Column="4" MinWidth="108">
                                 <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="{StaticResource DisplayFont}"
                                            FontFeatures="{StaticResource TabularNumbers}" FontSize="12.5">
                                     <Run Text="{Binding Rank}" Foreground="{Binding RankBrush}" /><Run Text="{Binding RankTotal}" Foreground="{StaticResource Text2Brush}" />
@@ -63,6 +62,24 @@
                     </Border>
                 </Panel>
             </Button>
+        </DataTemplate>
+
+        <!-- Someone on a KSF server (your server's card, or a server opened in the list): where they are on the map
+             (KSF's labels: start, stage / cp N, bonus N), their KSF rank and how long they've been on. -->
+        <DataTemplate x:Key="PlayerRowTemplate">
+            <Border Classes="row" Classes.you="{Binding IsYou}" Padding="8,5" Margin="-8,0">
+                <Grid ColumnDefinitions="82,*,Auto,64">
+                    <Border CornerRadius="5" Padding="6,1" Background="{Binding ZoneSoftBrush}" HorizontalAlignment="Left" VerticalAlignment="Center"
+                            IsVisible="{Binding HasZone}">
+                        <TextBlock Text="{Binding Zone}" Foreground="{Binding ZoneBrush}" FontSize="11" FontWeight="SemiBold" FontFamily="{StaticResource DisplayFont}" />
+                    </Border>
+                    <TextBlock Classes="playerName" Grid.Column="1" Text="{Binding Name}" FontSize="13" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Classes="numbers" Text="{Binding Rank}" Foreground="{StaticResource Text2Brush}" FontSize="12.5"
+                               Margin="10,0,0,0" />
+                    <TextBlock Grid.Column="3" Classes="numbers" Text="{Binding Connected}" Foreground="{StaticResource Text2Brush}" FontSize="12.5"
+                               HorizontalAlignment="Right" ToolTip.Tip="Time on the server" />
+                </Grid>
+            </Border>
         </DataTemplate>
 
         <!-- Nominate page, tiles view: the map's picture, name, tier and details, and its buttons. -->
@@ -331,6 +348,10 @@
             <Setter Property="Background" Value="{StaticResource AccentSoftBrush}" />
             <Setter Property="BorderBrush" Value="#55FF7A1A" />
         </Style>
+        <!-- A server clicked open in the list: its row and the players under it read as one. -->
+        <Style Selector="Border.row.open">
+            <Setter Property="Background" Value="#0DFFFFFF" />
+        </Style>
         <Style Selector="Border.row.here">
             <Setter Property="BorderBrush" Value="#55FF7A1A" />
         </Style>
@@ -346,6 +367,17 @@
         </Style>
         <Style Selector="Panel.laterRow:pointerover StackPanel.actions, Panel.serverRow:pointerover Button.join">
             <Setter Property="Opacity" Value="1" />
+        </Style>
+
+        <!-- "+ 28 more surfing - show everyone" under a list of players. -->
+        <Style Selector="Button.moreLink">
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.moreLink TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+        </Style>
+        <Style Selector="Button.moreLink:pointerover TextBlock">
+            <Setter Property="TextDecorations" Value="Underline" />
         </Style>
 
         <!-- Your level: the tick rate you're playing on stands out. -->
@@ -439,15 +471,7 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="0,0,8,0" VerticalAlignment="Center">
-                    <!-- Simple (the essentials, bigger and cleaner) or Advanced (every detail), and which parts are on the dashboard. -->
-                    <Border CornerRadius="7" Background="#0EFFFFFF" Padding="2" VerticalAlignment="Center" Margin="0,0,6,0" IsVisible="{Binding IsDashboardPage}">
-                        <StackPanel Orientation="Horizontal">
-                            <Button Theme="{StaticResource SegmentButton}" Content="Simple" Command="{Binding SetViewCommand}" CommandParameter="simple"
-                                    Classes.selected="{Binding Layout.IsSimple}" ToolTip.Tip="The essentials, bigger and cleaner" ToolTip.ShowDelay="600" />
-                            <Button Theme="{StaticResource SegmentButton}" Content="Advanced" Command="{Binding SetViewCommand}" CommandParameter="advanced"
-                                    Classes.selected="{Binding Layout.IsAdvanced}" ToolTip.Tip="Every detail" ToolTip.ShowDelay="600" />
-                        </StackPanel>
-                    </Border>
+                    <!-- Which parts are on the dashboard. -->
                     <ToggleButton x:Name="CustomizeButton" Theme="{StaticResource TitleToggle}" Margin="0,0,10,0" VerticalAlignment="Center"
                                   IsVisible="{Binding IsDashboardPage}">
                         <StackPanel Orientation="Horizontal">
@@ -581,6 +605,14 @@
                             <DockPanel Margin="0,12,0,0">
                                 <TextBlock DockPanel.Dock="Right" Classes="muted" Text="{Binding MapStatus}" FontSize="11.5" Margin="12,0,0,6" VerticalAlignment="Bottom" />
                                 <WrapPanel>
+                                    <TextBlock Classes="filterLabel" Text="TICK" Margin="0,0,8,6" />
+                                    <Border CornerRadius="7" Background="{StaticResource Bg2Brush}" Padding="2" Margin="0,0,20,6"
+                                            ToolTip.Tip="Which of your records mark maps done: 66 tick or 100 tick (KSF keeps them apart). Picked here, it stays; otherwise it follows the server you're on." ToolTip.ShowDelay="700">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button Theme="{StaticResource SegmentButton}" Content="66T" Command="{Binding NominateTickCommand}" CommandParameter="css" Classes.selected="{Binding NominateTick, Converter={StaticResource Eq}, ConverterParameter=css}" />
+                                            <Button Theme="{StaticResource SegmentButton}" Content="100T" Command="{Binding NominateTickCommand}" CommandParameter="css100t" Classes.selected="{Binding NominateTick, Converter={StaticResource Eq}, ConverterParameter=css100t}" />
+                                        </StackPanel>
+                                    </Border>
                                     <TextBlock Classes="filterLabel" Text="TIER" Margin="0,0,8,6" />
                                     <Border CornerRadius="7" Background="{StaticResource Bg2Brush}" Padding="2" Margin="0,0,20,6">
                                         <StackPanel Orientation="Horizontal">
@@ -606,7 +638,7 @@
                                     </Border>
                                     <TextBlock Classes="filterLabel" Text="SHOW" Margin="0,0,8,6" />
                                     <Border CornerRadius="7" Background="{StaticResource Bg2Brush}" Padding="2" Margin="0,0,20,6"
-                                            ToolTip.Tip="Maps you've finished on KSF (this tick rate), or the ones you haven't yet" ToolTip.ShowDelay="700">
+                                            ToolTip.Tip="Maps you've finished on KSF (on the tick rate picked), or the ones you haven't yet" ToolTip.ShowDelay="700">
                                         <StackPanel Orientation="Horizontal">
                                             <Button Theme="{StaticResource SegmentButton}" Content="All" Command="{Binding SetMapDoneCommand}" CommandParameter="all" Classes.selected="{Binding MapDone, Converter={StaticResource Eq}, ConverterParameter=all}" />
                                             <Button Theme="{StaticResource SegmentButton}" Content="Not done" Command="{Binding SetMapDoneCommand}" CommandParameter="todo" Classes.selected="{Binding MapDone, Converter={StaticResource Eq}, ConverterParameter=todo}" />
@@ -897,7 +929,7 @@
                                             <TextBlock Classes="sectionTitle" Text="WORLD RECORD" />
                                             <TextBlock Classes="numbers" Text="{Binding WrTime}" FontSize="31" FontWeight="SemiBold" Foreground="#F5C542" Margin="0,10,0,0" />
                                             <TextBlock Text="{Binding WrHolder}" FontSize="13" TextTrimming="CharacterEllipsis" Margin="0,4,0,0" />
-                                            <TextBlock Classes="muted" Text="{Binding WrDate}" Margin="0,2,0,0" IsVisible="{Binding Layout.IsAdvanced}" />
+                                            <TextBlock Classes="muted" Text="{Binding WrDate}" Margin="0,2,0,0" />
                                         </StackPanel>
                                     </Border>
                                     <Border Classes="card tile">
@@ -905,7 +937,7 @@
                                             <TextBlock Classes="sectionTitle" Text="YOUR BEST" />
                                             <TextBlock Classes="numbers" Text="{Binding PbTime}" FontSize="31" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" Margin="0,10,0,0" />
                                             <TextBlock Text="{Binding PbRank}" FontSize="13" TextTrimming="CharacterEllipsis" Margin="0,4,0,0" />
-                                            <StackPanel IsVisible="{Binding Layout.IsAdvanced}">
+                                            <StackPanel>
                                                 <Panel Height="4" Margin="0,9,0,0" IsVisible="{Binding HasPb}">
                                                     <Border CornerRadius="2" Background="{StaticResource Bg3Brush}" />
                                                     <Border CornerRadius="2" Background="{StaticResource AccentBrush}" ui:BarFill.Fraction="{Binding PbBar}" />
@@ -918,7 +950,7 @@
                                         <StackPanel>
                                             <TextBlock Classes="sectionTitle" Text="GAP TO WR" />
                                             <TextBlock Classes="numbers" Text="{Binding GapTime}" FontSize="31" FontWeight="SemiBold" Margin="0,10,0,0" />
-                                            <TextBlock Classes="muted" Text="{Binding GapDetail}" Margin="0,4,0,0" FontSize="12.5" IsVisible="{Binding Layout.IsAdvanced}" />
+                                            <TextBlock Classes="muted" Text="{Binding GapDetail}" Margin="0,4,0,0" FontSize="12.5" />
                                             <Border Classes="chip" Background="{StaticResource GoodSoftBrush}" HorizontalAlignment="Left" Margin="0,9,0,0" IsVisible="{Binding HasGroup}">
                                                 <TextBlock Classes="chipText" Text="{Binding GroupText}" Foreground="{StaticResource GoodBrush}" />
                                             </Border>
@@ -943,7 +975,7 @@
                                             </DockPanel>
                                             <TextBlock Classes="numbers" Classes.reached="{Binding GroupGoalReached}" Text="{Binding GroupGoalTime}" FontSize="31" FontWeight="SemiBold" Margin="0,10,0,0" />
                                             <TextBlock Text="{Binding GroupGoalDetail}" FontSize="13" TextTrimming="CharacterEllipsis" Margin="0,4,0,0" />
-                                            <TextBlock Classes="muted" Text="{Binding GroupGoalNote}" Margin="0,2,0,0" IsVisible="{Binding Layout.IsAdvanced}" />
+                                            <TextBlock Classes="muted" Text="{Binding GroupGoalNote}" Margin="0,2,0,0" />
                                         </StackPanel>
                                     </Border>
                                     <Border Classes="card tile" ToolTip.ShowDelay="700"
@@ -952,7 +984,7 @@
                                             <TextBlock Classes="sectionTitle" Text="FINISHES" />
                                             <TextBlock Classes="numbers" Text="{Binding Finishes}" FontSize="31" FontWeight="SemiBold" Margin="0,10,0,0" />
                                             <TextBlock Text="{Binding Attempts}" FontSize="13" Margin="0,4,0,0" />
-                                            <TextBlock Classes="muted" Text="{Binding Playtime}" Margin="0,2,0,0" IsVisible="{Binding Layout.IsAdvanced}" />
+                                            <TextBlock Classes="muted" Text="{Binding Playtime}" Margin="0,2,0,0" />
                                         </StackPanel>
                                     </Border>
                                 </ui:TileRows>
@@ -964,14 +996,14 @@
                                     <StackPanel>
                                         <DockPanel Margin="0,0,0,8">
                                             <TextBlock Classes="muted" DockPanel.Dock="Right" Text="bar: how close you are to the record (full = record pace)" FontSize="11.5"
-                                                       IsVisible="{Binding Layout.IsAdvanced}" />
+                                                       />
                                             <TextBlock Classes="sectionTitle" Text="YOUR TIMES" />
                                         </DockPanel>
                                         <ContentControl Content="{Binding MapRow}" ContentTemplate="{StaticResource ZoneRowTemplate}" Focusable="False" />
 
                                         <StackPanel Margin="0,14,0,0" IsVisible="{Binding HasStages}">
                                             <DockPanel Margin="0,0,0,6">
-                                                <TextBlock Classes="muted" DockPanel.Dock="Right" Text="{Binding StagesSummary}" FontSize="11.5" IsVisible="{Binding Layout.IsAdvanced}" />
+                                                <TextBlock Classes="muted" DockPanel.Dock="Right" Text="{Binding StagesSummary}" FontSize="11.5" />
                                                 <TextBlock Classes="sectionTitle" Text="STAGES" FontSize="11.5" />
                                             </DockPanel>
                                             <Grid x:Name="StagesGrid" RowDefinitions="Auto,Auto" ColumnDefinitions="*,*">
@@ -983,7 +1015,7 @@
 
                                         <StackPanel Margin="0,14,0,0" IsVisible="{Binding HasBonuses}">
                                             <DockPanel Margin="0,0,0,6">
-                                                <TextBlock Classes="muted" DockPanel.Dock="Right" Text="{Binding BonusesSummary}" FontSize="11.5" IsVisible="{Binding Layout.IsAdvanced}" />
+                                                <TextBlock Classes="muted" DockPanel.Dock="Right" Text="{Binding BonusesSummary}" FontSize="11.5" />
                                                 <TextBlock Classes="sectionTitle" Text="BONUSES" FontSize="11.5" />
                                             </DockPanel>
                                             <Grid x:Name="BonusesGrid" RowDefinitions="Auto,Auto" ColumnDefinitions="*,*">
@@ -1043,7 +1075,7 @@
                                                                 <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" FontSize="13.5" />
                                                                 <TextBlock Grid.Column="2" Classes="numbers" Text="{Binding Time}" FontSize="15" />
                                                                 <TextBlock Grid.Column="3" Classes="numbers" Text="{Binding Gap}" Foreground="{StaticResource Text2Brush}"
-                                                                           FontSize="13" HorizontalAlignment="Right" IsVisible="{Binding $parent[Window].DataContext.Layout.IsAdvanced}" />
+                                                                           FontSize="13" HorizontalAlignment="Right" />
                                                             </Grid>
                                                         </Border>
                                                     </Panel>
@@ -1054,9 +1086,9 @@
                                 </Border>
                             </ContentControl>
 
-                            <!-- in-game keys (help, so not in the Simple view) -->
+                            <!-- in-game keys -->
                             <ContentControl Theme="{StaticResource Part}" Tag="keys" IsVisible="{Binding Layout[keys]}">
-                                <StackPanel Orientation="Horizontal" Margin="4,2,0,16" Opacity="0.85" IsVisible="{Binding Layout.IsAdvanced}">
+                                <StackPanel Orientation="Horizontal" Margin="4,2,0,16" Opacity="0.85">
                                     <TextBlock Classes="muted" Text="In game" Margin="0,0,12,0" />
                                     <Border Classes="keyCap"><TextBlock x:Name="SaveKey" Text="F5" FontFamily="{StaticResource DisplayFont}" FontSize="11.5" /></Border>
                                     <TextBlock Classes="muted" Text="save map" Margin="0,0,16,0" />
@@ -1094,31 +1126,14 @@
                                             <Border CornerRadius="1.5" Background="{StaticResource Bg3Brush}" />
                                             <Border CornerRadius="1.5" Background="{StaticResource AccentBrush}" ui:BarFill.Fraction="{Binding LiveTimeFraction}" />
                                         </Panel>
-                                        <ItemsControl ItemsSource="{Binding LivePlayers}" Margin="0,4,0,0">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate>
-                                                    <ui:LimitPanel MaxItems="{Binding LiveLimit}" />
-                                                </ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Border Classes="row" Classes.you="{Binding IsYou}" Padding="8,5" Margin="-8,0">
-                                                        <Grid ColumnDefinitions="82,*,Auto,64">
-                                                            <Border CornerRadius="5" Padding="6,1" Background="{Binding ZoneSoftBrush}" HorizontalAlignment="Left" VerticalAlignment="Center"
-                                                                    IsVisible="{Binding HasZone}">
-                                                                <TextBlock Text="{Binding Zone}" Foreground="{Binding ZoneBrush}" FontSize="11" FontWeight="SemiBold" FontFamily="{StaticResource DisplayFont}" />
-                                                            </Border>
-                                                            <TextBlock Classes="playerName" Grid.Column="1" Text="{Binding Name}" FontSize="13" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                                            <TextBlock Grid.Column="2" Classes="numbers" Text="{Binding Rank}" Foreground="{StaticResource Text2Brush}" FontSize="12.5"
-                                                                       Margin="10,0,0,0" />
-                                                            <TextBlock Grid.Column="3" Classes="numbers" Text="{Binding Connected}" Foreground="{StaticResource Text2Brush}" FontSize="12.5"
-                                                                       HorizontalAlignment="Right" ToolTip.Tip="Time on the server" />
-                                                        </Grid>
-                                                    </Border>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                        <TextBlock Classes="muted" Text="{Binding LiveSpectators}" FontSize="11.5" Margin="0,6,0,0" />
+                                        <ItemsControl ItemsSource="{Binding LivePlayers}" Margin="0,4,0,0" ItemTemplate="{StaticResource PlayerRowTemplate}" />
+                                        <WrapPanel Margin="0,6,0,0">
+                                            <Button Theme="{StaticResource BareButton}" Classes="moreLink" Margin="0,0,12,0" IsVisible="{Binding HasLiveMore}"
+                                                    Command="{Binding ShowEveryoneCommand}" CommandParameter="live">
+                                                <TextBlock Text="{Binding LiveMore}" FontSize="11.5" />
+                                            </Button>
+                                            <TextBlock Classes="muted" Text="{Binding LiveSpectators}" FontSize="11.5" />
+                                        </WrapPanel>
                                     </StackPanel>
                                 </Border>
                             </ContentControl>
@@ -1131,7 +1146,7 @@
                                         <UniformGrid Columns="4" Margin="0,10,0,0">
                                             <StackPanel>
                                                 <TextBlock Classes="numbers" Text="{Binding SessionTime}" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Left" />
-                                                <TextBlock Classes="muted" Text="played" FontSize="11.5" Margin="0,2,0,0" />
+                                                <TextBlock Classes="muted" Text="{Binding SessionTimeLabel}" FontSize="11.5" Margin="0,2,0,0" TextWrapping="Wrap" />
                                             </StackPanel>
                                             <StackPanel>
                                                 <TextBlock Classes="numbers" Text="{Binding SessionMaps}" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Left" />
@@ -1175,11 +1190,11 @@
                                                         </Panel>
                                                         <DockPanel Margin="0,7,0,0">
                                                             <TextBlock DockPanel.Dock="Right" Classes="muted" Text="{Binding Extra}" FontSize="11.5" Margin="12,0,0,0" VerticalAlignment="Center"
-                                                                       IsVisible="{Binding $parent[Window].DataContext.Layout.IsAdvanced}" />
+                                                                       />
                                                             <TextBlock Text="{Binding Next}" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                                                         </DockPanel>
                                                         <TextBlock Classes="muted" Text="{Binding NextDetail}" FontSize="11.5" Margin="0,2,0,0"
-                                                                   IsVisible="{Binding $parent[Window].DataContext.Layout.IsAdvanced}" />
+                                                                   />
                                                     </StackPanel>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
@@ -1274,48 +1289,68 @@
                                         </DockPanel>
                                         <TextBlock Classes="muted" Text="Loading servers..." IsVisible="{Binding !HasServers}" />
                                         <ItemsControl ItemsSource="{Binding Servers}">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate>
-                                                    <ui:LimitPanel MaxItems="{Binding ServerLimit}" />
-                                                </ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Panel Classes="serverRow" Background="Transparent">
-                                                        <Border Classes="row" Classes.yours="{Binding IsYours}" />
-                                                        <Border Classes="hover" CornerRadius="9" Background="#0CFFFFFF" />
-                                                        <Grid Margin="10,7" ColumnDefinitions="146,*,Auto,70,Auto">
-                                                            <StackPanel VerticalAlignment="Center">
-                                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12.5" Foreground="{StaticResource Text1Brush}" TextTrimming="CharacterEllipsis" />
-                                                                <TextBlock Text="YOU'RE HERE" Foreground="{StaticResource AccentBrush}" FontFamily="{StaticResource DisplayFont}"
-                                                                           FontSize="10.5" FontWeight="SemiBold" IsVisible="{Binding IsYours}" />
-                                                            </StackPanel>
-                                                            <DockPanel Grid.Column="1" VerticalAlignment="Center">
-                                                                <Border DockPanel.Dock="Left" CornerRadius="5" Padding="6,1" Background="{Binding TierSoftBrush}" VerticalAlignment="Center">
-                                                                    <TextBlock Text="{Binding Tier}" Foreground="{Binding TierBrush}" FontSize="11.5" FontWeight="SemiBold" FontFamily="{StaticResource DisplayFont}" />
-                                                                </Border>
-                                                                <StackPanel Margin="8,0,0,0" VerticalAlignment="Center">
-                                                                    <!-- The star right after the name, which gives way when there isn't room. -->
-                                                                    <DockPanel HorizontalAlignment="Left">
-                                                                        <ui:Icon DockPanel.Dock="Right" Data="{StaticResource IconStar}" Filled="True" Foreground="{StaticResource StarBrush}" Width="11" Height="11"
-                                                                                 Margin="7,0,0,0" IsVisible="{Binding IsSaved}" />
-                                                                        <TextBlock Text="{Binding Map}" FontSize="13" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                    <!-- Click a server to see who's on it (again to close it); Join connects. -->
+                                                    <StackPanel>
+                                                        <Button Theme="{StaticResource BareButton}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Cursor="Hand"
+                                                                Command="{Binding $parent[Window].DataContext.ToggleServerCommand}" CommandParameter="{Binding Address}"
+                                                                ToolTip.Tip="Who's on it" ToolTip.ShowDelay="900">
+                                                            <Panel Classes="serverRow" Background="Transparent">
+                                                                <Border Classes="row" Classes.yours="{Binding IsYours}" Classes.open="{Binding IsExpanded}" />
+                                                                <Border Classes="hover" CornerRadius="9" Background="#0CFFFFFF" />
+                                                                <Grid Margin="10,7" ColumnDefinitions="136,*,Auto,Auto,66,Auto">
+                                                                    <StackPanel VerticalAlignment="Center">
+                                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12.5" Foreground="{StaticResource Text1Brush}" TextTrimming="CharacterEllipsis" />
+                                                                        <TextBlock Text="YOU'RE HERE" Foreground="{StaticResource AccentBrush}" FontFamily="{StaticResource DisplayFont}"
+                                                                                   FontSize="10.5" FontWeight="SemiBold" IsVisible="{Binding IsYours}" />
+                                                                    </StackPanel>
+                                                                    <DockPanel Grid.Column="1" VerticalAlignment="Center">
+                                                                        <Border DockPanel.Dock="Left" CornerRadius="5" Padding="6,1" Background="{Binding TierSoftBrush}" VerticalAlignment="Center">
+                                                                            <TextBlock Text="{Binding Tier}" Foreground="{Binding TierBrush}" FontSize="11.5" FontWeight="SemiBold" FontFamily="{StaticResource DisplayFont}" />
+                                                                        </Border>
+                                                                        <StackPanel Margin="8,0,0,0" VerticalAlignment="Center">
+                                                                            <!-- The star right after the name, which gives way when there isn't room. -->
+                                                                            <DockPanel HorizontalAlignment="Left">
+                                                                                <ui:Icon DockPanel.Dock="Right" Data="{StaticResource IconStar}" Filled="True" Foreground="{StaticResource StarBrush}" Width="11" Height="11"
+                                                                                         Margin="7,0,0,0" IsVisible="{Binding IsSaved}" />
+                                                                                <TextBlock Text="{Binding Map}" FontSize="13" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                                            </DockPanel>
+                                                                            <!-- linear or staged (and how many stages and bonuses) -->
+                                                                            <TextBlock Classes="muted" Text="{Binding Kind}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                                                                        </StackPanel>
                                                                     </DockPanel>
-                                                                    <!-- linear or staged (and how many stages and bonuses) -->
-                                                                    <TextBlock Classes="muted" Text="{Binding Kind}" FontSize="11" />
-                                                                </StackPanel>
-                                                            </DockPanel>
-                                                            <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="10,0,0,0" VerticalAlignment="Center">
-                                                                <ui:Icon Data="{StaticResource IconUsers}" Foreground="{StaticResource Text2Brush}" Width="13" Height="13" />
-                                                                <TextBlock Classes="numbers" Text="{Binding Players}" Margin="6,0,0,0" FontSize="13.5" />
-                                                            </StackPanel>
-                                                            <TextBlock Grid.Column="3" Classes="muted" Text="{Binding TimeLeft}" TextAlignment="Right" HorizontalAlignment="Right" />
-                                                            <Button Classes="join" Grid.Column="4" Theme="{StaticResource GhostButton}" Padding="10,4" Margin="10,0,0,0"
-                                                                    Command="{Binding $parent[Window].DataContext.JoinCommand}" CommandParameter="{Binding Address}">
-                                                                <TextBlock Text="Join" />
-                                                            </Button>
-                                                        </Grid>
-                                                    </Panel>
+                                                                    <!-- Your time on the map, and the stages (or the map) and bonuses you've done: green done, red not yet. -->
+                                                                    <StackPanel Grid.Column="2" Width="74" Margin="10,0,0,0" VerticalAlignment="Center" Background="Transparent"
+                                                                                IsVisible="{Binding HasProgress}" ToolTip.Tip="{Binding ProgressTip}" ToolTip.ShowDelay="300">
+                                                                        <TextBlock Classes="numbers" Text="{Binding YourTime}" Foreground="{Binding YourTimeBrush}" FontSize="11.5" HorizontalAlignment="Left" />
+                                                                        <ui:ZoneBar Pattern="{Binding StagePattern}" Height="4" Margin="0,4,0,0" />
+                                                                        <ui:ZoneBar Pattern="{Binding BonusPattern}" Height="4" Margin="0,2,0,0" IsVisible="{Binding HasBonusBar}" />
+                                                                    </StackPanel>
+                                                                    <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
+                                                                        <ui:Icon Data="{StaticResource IconUsers}" Foreground="{StaticResource Text2Brush}" Width="13" Height="13" />
+                                                                        <TextBlock Classes="numbers" Text="{Binding Players}" Margin="6,0,0,0" FontSize="13.5" />
+                                                                    </StackPanel>
+                                                                    <TextBlock Grid.Column="4" Classes="muted" Text="{Binding TimeLeft}" TextAlignment="Right" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                                                    <Button Classes="join" Grid.Column="5" Theme="{StaticResource GhostButton}" Padding="10,4" Margin="10,0,0,0"
+                                                                            Command="{Binding $parent[Window].DataContext.JoinCommand}" CommandParameter="{Binding Address}">
+                                                                        <TextBlock Text="Join" />
+                                                                    </Button>
+                                                                </Grid>
+                                                            </Panel>
+                                                        </Button>
+                                                        <!-- Opened: everyone on it (the first 12 until you ask for the rest). -->
+                                                        <StackPanel Margin="18,4,10,12" IsVisible="{Binding IsExpanded}">
+                                                            <ItemsControl ItemsSource="{Binding PlayerRows}" ItemTemplate="{StaticResource PlayerRowTemplate}" />
+                                                            <WrapPanel Margin="0,6,0,0">
+                                                                <Button Theme="{StaticResource BareButton}" Classes="moreLink" Margin="0,0,12,0" IsVisible="{Binding HasPlayersMore}"
+                                                                        Command="{Binding $parent[Window].DataContext.ShowEveryoneCommand}" CommandParameter="{Binding Address}">
+                                                                    <TextBlock Text="{Binding PlayersMore}" FontSize="11.5" />
+                                                                </Button>
+                                                                <TextBlock Classes="muted" Text="{Binding PlayersNote}" FontSize="11.5" />
+                                                            </WrapPanel>
+                                                        </StackPanel>
+                                                    </StackPanel>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
@@ -1329,11 +1364,6 @@
                                         <TextBlock Classes="sectionTitle" Text="YOUR RECENT RECORDS" Margin="0,0,0,12" />
                                         <TextBlock Classes="muted" Text="Nothing yet - your new PRs and groups on KSF show up here." IsVisible="{Binding !HasRecent}" />
                                         <ItemsControl ItemsSource="{Binding Recent}">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate>
-                                                    <ui:LimitPanel MaxItems="{Binding RecentLimit}" />
-                                                </ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
                                                     <Grid Margin="0,0,0,12" ColumnDefinitions="94,*,Auto">

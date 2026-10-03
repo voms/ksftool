@@ -92,7 +92,6 @@ jobs:
           fi
           # The busiest KSF server right now, as if you were on it.
           ./result/bin/ksf-companion --preview live dashboard.png 1600 1080
-          KSFC_PREVIEW_MODE=simple ./result/bin/ksf-companion --preview live dashboard-simple.png 1600 1080
           # And the in-game KSF card for a map, as text.
           ./result/bin/ksf-companion --card surf_utopia_njv
 

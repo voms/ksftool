@@ -172,6 +172,41 @@ namespace KsfCompanion
             var next = GroupGoal.For(bugs, null, 465);
             Check("in group 4: group 3 is next", next.Group == 3 && next.FirstRank == 36 && next.LastRank == 60 && next.NeedsCutoff);
             Check("one you're in already needs no lookup", !GroupGoal.For(bugs, 5, 465).NeedsCutoff && GroupGoal.For(bugs, 5, 465).YourGroup == 4);
+
+            // KSF's own cutoffs, as ksf.surf's leaderboard page hands them to its table - the same as the rule's.
+            var page = "<script>self.__next_f.push([1,\"...\\\"map\\\":\\\"surf_bugs\\\",\\\"zone\\\":0,\\\"cutOffs\\\":[10,20,35,60,100,161,313]}]\"])</script>";
+            var published = KsfApi.ParseGroupEnds(page);
+            Check("ksf.surf's cutoffs read off its page", published != null && published.SequenceEqual(new[] { 10, 20, 35, 60, 100, 161, 313 }), published == null ? "none" : string.Join(",", published));
+            Check("they're what the rule works out", published != null && published.SequenceEqual(KsfGroups.Ends(465)));
+            Check("a page without them, or nonsense, gives none", KsfApi.ParseGroupEnds("<html></html>") == null && KsfApi.ParseGroupEnds("\"cutOffs\":[10,5,1]") == null);
+            var short100 = KsfGroups.Checked(KsfApi.ParseGroupEnds("\"zone\":0,\"cutOffs\":[10,20,35,60,80]}"));
+            Check("groups left out at the end are empty (surf_bugs on 100 tick)", short100 != null && short100.SequenceEqual(new[] { 10, 20, 35, 60, 80, 80, 80 })
+                && KsfGroups.LastRank(4, short100) == 80 && KsfGroups.LastRank(5, short100) == null && short100.SequenceEqual(KsfGroups.Ends(116)));
+            Check("the page for 100 tick", KsfApi.GroupEndsPage("surf_bugs", "css100t") == "/maps/surf_bugs/records?game=100T"
+                && KsfApi.GroupEndsPage("surf_bugs", "css") == "/maps/surf_bugs/records?game=66T");
+            var withEnds = GroupGoal.For(new MapReport { Info = new MapInfo { Name = "surf_bugs" } }, 4, 0, published);
+            Check("with KSF's cutoffs the size of the leaderboard isn't needed", withEnds.FirstRank == 61 && withEnds.LastRank == 100, $"{withEnds.FirstRank}-{withEnds.LastRank}");
+
+            // No time on the map: no rank and no group, whatever ksf.surf's record says.
+            var drift = new MapReport { Info = new MapInfo { Name = "surf_drift" } };
+            drift.Zones.Add(new ZoneRecord { ZoneId = 0, TotalRanks = 24 });
+            var noTime = GroupGoal.For(drift, null, 24);
+            Check("not finished: you're in no group, and the easiest one there is is the goal", noTime.YourRank == null && noTime.YourGroup == null && noTime.Group == 1 && noTime.LastRank == 19,
+                $"{noTime.YourRank} {noTime.YourGroup} {noTime.Group} {noTime.LastRank}");
+            var top10 = GroupGoal.For(drift, 0, 24);
+            var tile = new DashboardViewModel();
+            tile.ShowGroupGoal(top10);
+            Check("and the top 10 isn't \"in\" without a time", !tile.GroupGoalReached && tile.GroupGoalTime != "IN", tile.GroupGoalTime);
+
+            // The server list's progress bars.
+            var progress = MapProgress.From(new[]
+            {
+                new ZoneRecord { ZoneId = 0, Time = 62.5 }, new ZoneRecord { ZoneId = 1, Time = 10 }, new ZoneRecord { ZoneId = 3, Time = 12 },
+                new ZoneRecord { ZoneId = 32, Time = 20 }, new ZoneRecord { ZoneId = 2 },
+            }, linear: false, stages: 4, bonuses: 2);
+            Check("stages and bonuses done, in order", progress.Stages == "1010" && progress.Bonuses == "01" && progress.Time == 62.5, progress.Stages + " " + progress.Bonuses);
+            var linear = MapProgress.From(new ZoneRecord[0], linear: true, stages: 7, bonuses: 0);
+            Check("a linear map is one bar, the map itself", linear.Stages == "0" && linear.Bonuses == "" && linear.Time == null);
         }
 
         static void Config(string root)
@@ -193,6 +228,18 @@ namespace KsfCompanion
             Check("settings.ini is yours only", OperatingSystem.IsWindows() || (File.GetUnixFileMode(settingsFile) & (UnixFileMode.GroupRead | UnixFileMode.OtherRead)) == 0);
             Check("cfg files with Linux line ends", !File.ReadAllText(Path.Combine(cstrike, "cfg", "ksf_companion.cfg")).Contains('\r'));
             Check("your F5 bind remembered", config.OriginalBind(settings, "F5") == "jpeg");
+            // Held, the card key repeats while the console is open: the card prints once, until the key is let go.
+            var keysCfg = File.ReadAllText(Path.Combine(cstrike, "cfg", "ksf_companion.cfg"));
+            Check("the card prints once per press", keysCfg.Contains("alias +ksf_card \"ksf_card_go\"") && keysCfg.Contains("alias ksf_card_go ksf_card_show")
+                && keysCfg.Contains("alias ksf_card_show \"exec ksf_card; showconsole; alias ksf_card_go ksf_held\"")
+                && keysCfg.Contains("alias -ksf_card \"hideconsole; gameui_hide; alias ksf_card_go ksf_card_show\""));
+            Check("the map-load commands are /m and /pr", settings.Get("server_commands") == "sm_m; sm_pr" && GameConfig.ServerCommandsInChat(settings) == "/m and /pr");
+            var oldFile = Path.Combine(root, "old-settings.ini");
+            File.WriteAllText(oldFile, "server_commands = sm_m; sm_mrank\nview = simple\n");
+            var old = new Settings(oldFile);
+            Check("an old settings.ini moves on to /pr and loses the Simple view", old.Get("server_commands") == "sm_m; sm_pr" && !File.ReadAllText(oldFile).Contains("view ="));
+            File.WriteAllText(oldFile, "server_commands = sm_wr\n");
+            Check("commands you picked yourself stay", new Settings(oldFile).Get("server_commands") == "sm_wr");
             Check("your in-game name", config.PlayerName() == "surfer");
             config.Install(settings);
             Check("installing twice leaves one block", File.ReadAllText(Path.Combine(cstrike, "cfg", "autoexec.cfg")).Split("KSF Companion >>>").Length == 2);
@@ -485,7 +532,34 @@ namespace KsfCompanion
             tile.ShowGroupGoal(new GroupGoal { Group = 4, Total = 465, FirstRank = 61, LastRank = 100, YourTime = 38.475, YourRank = 87, YourGroup = 4 });
             Check("or that you're in it", tile.GroupGoalReached && tile.GroupGoalTime == "IN" && tile.GroupGoalDetail == "you're in it at #87", tile.GroupGoalDetail);
 
-            // Hiding a part (Layout[...] bindings) and the Simple view reach the window.
+            // The server list: a server clicked open shows its players, the first 12 until you ask for everyone.
+            var lists = new DashboardViewModel();
+            var busy = new KsfServer { Game = "css", Name = "Busy", Address = "192.0.2.1:27015", Map = "surf_x", PlayerCount = 30 };
+            for (var i = 0; i < 30; i++) busy.Players.Add(new KsfServerPlayer { SteamId = "STEAM_0:0:" + i, Name = "p" + i, Zone = i == 29 ? -1 : i % 5 });
+            lists.SetServers(new List<KsfServer> { busy }, null, new HashSet<string>());
+            Check("servers start closed", !lists.Servers[0].IsExpanded && lists.Servers[0].PlayerRows.Count == 0);
+            lists.ToggleServerCommand.Execute(busy.Address);
+            Check("clicked open: its players", lists.Servers[0].IsExpanded && lists.Servers[0].PlayerRows.Count == 12 && lists.Servers[0].PlayersMore.StartsWith("+ 17 more surfing")
+                && lists.Servers[0].PlayersNote == "1 spectating", $"{lists.Servers[0].PlayerRows.Count} / {lists.Servers[0].PlayersMore} / {lists.Servers[0].PlayersNote}");
+            lists.ShowEveryoneCommand.Execute(busy.Address);
+            Check("and everyone on it", lists.Servers[0].PlayerRows.Count == 29 && lists.Servers[0].PlayersMore == "show fewer");
+            lists.SetMapProgress("css", "surf_x", MapProgress.From(new[] { new ZoneRecord { ZoneId = 0, Time = 40.5 } }, linear: true, stages: 0, bonuses: 2));
+            Check("your progress on its map", lists.Servers[0].HasProgress && lists.Servers[0].YourTime == "0:40.500" && lists.Servers[0].StagePattern == "1" && lists.Servers[0].BonusPattern == "00");
+            lists.SetLiveServer(busy, "STEAM_0:0:3", "surf_x");
+            Check("your server's card: the first 12, then everyone", lists.LivePlayers.Count == 12 && lists.HasLiveMore && lists.LivePlayers[0].IsYou);
+            lists.ShowEveryoneCommand.Execute("live");
+            Check("on asking", lists.LivePlayers.Count == 29 && lists.LiveMore == "show fewer");
+
+            // The session counts the time on servers only.
+            var session = new DashboardViewModel();
+            session.SetSession(TimeSpan.FromMinutes(10), null, 2, 1, 0);
+            Check("off a server the session waits", session.SessionTime == "10:00" && session.SessionTimeLabel.StartsWith("paused"), session.SessionTime + " " + session.SessionTimeLabel);
+            session.SetSession(TimeSpan.FromMinutes(10), DateTime.Now.AddMinutes(-5), 3, 1, 0);
+            Check("and goes on from there", session.SessionTime == "15:00" && session.SessionTimeLabel == "played", session.SessionTime);
+            session.EndSession(TimeSpan.FromMinutes(15));
+            Check("the game closed: the last session's time", session.SessionTitle == "LAST SESSION" && session.SessionTime == "15:00");
+
+            // Hiding a part (Layout[...] bindings) reaches the window.
             var model = SampleData.Dashboard();
             var window = new DashboardWindow(model, new KeyNames { Save = "F5", Card = "F6", List = "F7" }) { Width = 1440, Height = 940 };
             window.Show();

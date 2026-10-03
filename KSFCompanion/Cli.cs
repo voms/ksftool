@@ -245,10 +245,13 @@ namespace KsfCompanion
             vm.ShowReport(report, later.Contains(map));
             if (report.IsOnKsf)
             {
-                // The group tile: the group set in settings.ini (or the next one up from yours), and the time at its end.
+                // The group tile: the group set in settings.ini (or the next one up from yours), and the time at its end -
+                // with KSF's own cutoffs from ksf.surf, next to the ones the rule works out.
                 var total = report.Main?.TotalRanks
                     ?? (report.Wr?.SteamId is string holder ? api.GetTotalRanksAsync(report.Info.Name, holder, game, style).GetAwaiter().GetResult() : null) ?? 0;
-                var goal = GroupGoal.For(report, GroupGoal.Picked(settings.Get("group_goal")), total);
+                var ends = api.GetGroupEndsAsync(report.Info.Name, game, style).GetAwaiter().GetResult();
+                output.WriteLine($"group cutoffs: ksf.surf {(ends != null ? string.Join(",", ends) : "-")}, worked out {(total > 0 ? string.Join(",", KsfGroups.Ends(total)) : "-")} ({total} players)");
+                var goal = GroupGoal.For(report, GroupGoal.Picked(settings.Get("group_goal")), total, ends);
                 if (goal.NeedsCutoff && goal.LastRank is int last)
                     goal.Cutoff = goal.Group == 0 && report.Top.Count >= last ? report.Top[last - 1].Time
                         : api.GetRecordAtRankAsync(report.Info.Name, 0, last, game, style).GetAwaiter().GetResult()?.Time;
@@ -317,9 +320,8 @@ namespace KsfCompanion
                 vm.Tick(now);
             }
 
-            // KSFC_PREVIEW_MODE=simple for the Simple view; KSFC_PREVIEW_HIDE="live,servers" hides those parts.
-            vm.Layout.Load((Environment.GetEnvironmentVariable("KSFC_PREVIEW_HIDE") ?? "").Split(','),
-                Environment.GetEnvironmentVariable("KSFC_PREVIEW_MODE") == "simple");
+            // KSFC_PREVIEW_HIDE="live,servers" hides those parts.
+            vm.Layout.Load((Environment.GetEnvironmentVariable("KSFC_PREVIEW_HIDE") ?? "").Split(','));
 
             var celebrate = Environment.GetEnvironmentVariable("KSFC_PREVIEW_CELEBRATE") == "1";
             if (liveServer != null)
@@ -331,7 +333,17 @@ namespace KsfCompanion
                 clock.FromKsf(liveServer.TimeLimitMinutes, liveServer.TimeLeftSeconds, liveServer.FetchedAt);
                 vm.Clock = clock;
                 vm.SetLiveServer(liveServer, you, map);
-                vm.SetSession(DateTime.Now.AddMinutes(-83), 4, 3, 1);
+                // Your progress on each server's map (here: that player's), and the busiest other server opened.
+                vm.YourSteamId = steamId ?? you;
+                vm.SetServers(everyServer, liveServer.Address, saved);
+                if (vm.YourSteamId != null)
+                    foreach (var server in everyServer.Take(Environment.GetEnvironmentVariable("KSFC_PREVIEW_PROGRESS") == "0" ? 0 : 30))
+                        vm.SetMapProgress(server.Game, server.Map, MapProgress.From(
+                            api.GetPlayerZonesAsync(server.Map, vm.YourSteamId, server.Game, style, CancellationToken.None).GetAwaiter().GetResult(),
+                            server.IsLinear, server.StageCount, server.BonusCount));
+                var open = everyServer.Where(s => s != liveServer).OrderByDescending(s => s.Players.Count).FirstOrDefault();
+                if (open != null) vm.ToggleServerCommand.Execute(open.Address);
+                vm.SetSession(TimeSpan.FromMinutes(71), DateTime.Now.AddMinutes(-12), 4, 3, 1);
                 var next = everyServer.FirstOrDefault(s => s != liveServer && s.Map != map);
                 if (next != null) vm.SetNextMap(next.Map, next.Tier);
             }

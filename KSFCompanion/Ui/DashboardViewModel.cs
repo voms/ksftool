@@ -177,12 +177,18 @@ namespace KsfCompanion.Ui
         public void Update() => Saved = SavedAt > DateTime.MinValue ? "saved " + DashboardViewModel.Ago(SavedAt) : "";
     }
 
-    /// <summary>A KSF server; the time left counts down every second between refreshes.</summary>
+    /// <summary>
+    /// A KSF server; the time left counts down every second between refreshes. Clicked open, its players show under it.
+    /// </summary>
     sealed class ServerRow : Observable
     {
-        string timeLeft;
+        string timeLeft, yourTime = "", stagePattern = "", bonusPattern = "", progressTip;
+        bool hasProgress;
+        IBrush yourTimeBrush;
 
         public string Name { get; set; }
+        /// <summary>css or css100t: the records its map's progress is about.</summary>
+        public string Game { get; set; }
         public string Map { get; set; }
         public string Tier { get; set; }
         public IBrush TierBrush { get; set; }
@@ -197,7 +203,59 @@ namespace KsfCompanion.Ui
         public DateTime FetchedAt { get; set; }
         public string TimeLeft { get => timeLeft; set => Set(ref timeLeft, value); }
 
-        public void Update(DateTime now) => TimeLeft = DashboardViewModel.Countdown(SecondsLeft - (now - FetchedAt).TotalSeconds);
+        // Your progress on its map: your time ("not done" without one), and which stages and bonuses you've done.
+        public bool HasProgress { get => hasProgress; set => Set(ref hasProgress, value); }
+        public string YourTime { get => yourTime; set => Set(ref yourTime, value); }
+        public IBrush YourTimeBrush { get => yourTimeBrush; set => Set(ref yourTimeBrush, value); }
+        /// <summary>One character a bar (ZoneBar): the stages of a staged map, or the map itself for a linear one.</summary>
+        public string StagePattern { get => stagePattern; set => Set(ref stagePattern, value); }
+        public string BonusPattern
+        {
+            get => bonusPattern;
+            set { if (Set(ref bonusPattern, value)) Raise(nameof(HasBonusBar)); }
+        }
+        public bool HasBonusBar => !string.IsNullOrEmpty(bonusPattern);
+        public string ProgressTip { get => progressTip; set => Set(ref progressTip, value); }
+
+        // Clicked open: who's on it.
+        public bool IsExpanded { get; set; }
+        public ObservableCollection<LivePlayerRow> PlayerRows { get; } = new ObservableCollection<LivePlayerRow>();
+        /// <summary>"+ 28 more surfing - show everyone", or "show fewer".</summary>
+        public string PlayersMore { get; set; }
+        public bool HasPlayersMore => !string.IsNullOrEmpty(PlayersMore);
+        /// <summary>"3 spectating", or that nobody's on.</summary>
+        public string PlayersNote { get; set; }
+
+        public void Update(DateTime now)
+        {
+            TimeLeft = DashboardViewModel.Countdown(SecondsLeft - (now - FetchedAt).TotalSeconds);
+            foreach (var player in PlayerRows) player.Update(now);
+        }
+    }
+
+    /// <summary>How far you are on a map (on one tick rate): your time on it, and which stages and bonuses you've done.</summary>
+    sealed class MapProgress
+    {
+        public double? Time;
+        /// <summary>'1' done, '0' not yet: each stage of a staged map, or the map itself for a linear one.</summary>
+        public string Stages = "";
+        public string Bonuses = "";
+        public int StagesDone => Stages.Count(c => c == '1');
+        public int BonusesDone => Bonuses.Count(c => c == '1');
+
+        /// <param name="zones">Your records on the map (0 the map, 1-30 stages, 31 and up bonuses).</param>
+        public static MapProgress From(IEnumerable<ZoneRecord> zones, bool linear, int stages, int bonuses)
+        {
+            var list = zones?.ToList() ?? new List<ZoneRecord>();
+            var done = new HashSet<int>(list.Where(z => z.Time != null).Select(z => z.ZoneId));
+            var staged = !linear && stages > 1 && stages < MapReport.FirstBonusZone;
+            return new MapProgress
+            {
+                Time = list.FirstOrDefault(z => z.ZoneId == 0)?.Time,
+                Stages = staged ? new string(Enumerable.Range(1, stages).Select(z => done.Contains(z) ? '1' : '0').ToArray()) : done.Contains(0) ? "1" : "0",
+                Bonuses = new string(Enumerable.Range(MapReport.FirstBonusZone, Math.Max(0, bonuses)).Select(z => done.Contains(z) ? '1' : '0').ToArray()),
+            };
+        }
     }
 
     /// <summary>Someone on your server: where they are on the map and how long they've been on.</summary>
@@ -456,7 +514,9 @@ namespace KsfCompanion.Ui
             celebrationTitle, celebrationDetail;
         double liveTimeFraction, heroTimeFraction;
         int celebrationId;
-        DateTime? sessionStart;
+        // The session: time on servers so far, and since when it's counting again (null: paused, off a server).
+        TimeSpan sessionPlayed;
+        DateTime? sessionSince;
         DateTime lastRelativeUpdate = DateTime.MinValue;
         Bitmap ambientImage;
 
@@ -488,6 +548,7 @@ namespace KsfCompanion.Ui
         public string ExtendInfo { get => extendInfo; set => Set(ref extendInfo, value); }
         public bool HasExtendInfo { get => hasExtendInfo; set => Set(ref hasExtendInfo, value); }
         public double LiveTimeFraction { get => liveTimeFraction; set => Set(ref liveTimeFraction, value); }
+        /// <summary>"3 spectating" under the players.</summary>
         public string LiveSpectators { get => liveSpectators; set => Set(ref liveSpectators, value); }
         public bool HasHeroTime { get => hasHeroTime; set => Set(ref hasHeroTime, value); }
         public double HeroTimeFraction { get => heroTimeFraction; set => Set(ref heroTimeFraction, value); }
@@ -510,30 +571,60 @@ namespace KsfCompanion.Ui
         public void SetLiveServer(KsfServer server, string yourSteamId, string heroMap)
         {
             liveServer = server;
+            liveSteamId = yourSteamId;
+            liveHeroMap = heroMap;
+            RenderLiveServer();
+        }
+
+        string liveSteamId, liveHeroMap, liveMore;
+        bool hasLiveMore;
+        /// <summary>"+ 28 more surfing - show everyone" (or "show fewer"): clicking it shows them all (ShowEveryoneCommand "live").</summary>
+        public string LiveMore { get => liveMore; set => Set(ref liveMore, value); }
+        public bool HasLiveMore { get => hasLiveMore; set => Set(ref hasLiveMore, value); }
+
+        void RenderLiveServer()
+        {
+            var server = liveServer;
             HasLiveServer = server != null;
             LivePlayers.Clear();
             if (server == null) return;
 
             // Right after a map change ksf.surf still reports the old map for a little while.
-            var fresh = heroMap == null || string.Equals(server.Map, heroMap, StringComparison.OrdinalIgnoreCase);
+            var fresh = liveHeroMap == null || string.Equals(server.Map, liveHeroMap, StringComparison.OrdinalIgnoreCase);
             LiveTitle = server.Name;
+            var players = Players(server, liveSteamId, fresh, everyoneShown.Contains("live"));
+            LiveSubtitle = fresh ? $"{server.Map}  ·  {players.Surfing} surfing" : $"{liveHeroMap}  ·  new map, updating...";
+            foreach (var row in players.Rows) LivePlayers.Add(row);
+            LiveMore = players.More;
+            HasLiveMore = !string.IsNullOrEmpty(players.More);
+            LiveSpectators = players.Spectators;
+            Tick(DateTime.Now);
+        }
+
+        /// <summary>Lists show this many players until you ask for everyone (busy servers have 40 or more).</summary>
+        const int PlayersShown = 12;
+
+        /// <summary>
+        /// A server's players as rows: you first, then the furthest along (stages before bonuses), then the longest on.
+        /// Spectators are only counted. Without <paramref name="all"/> it's the first 12, and More offers the rest.
+        /// </summary>
+        static (List<LivePlayerRow> Rows, int Surfing, string More, string Spectators) Players(KsfServer server, string yourSteamId, bool fresh, bool all)
+        {
             var active = server.Players.Where(p => p.Zone != -1).ToList();
             var spectating = server.Players.Count - active.Count;
-            LiveSubtitle = fresh ? $"{server.Map}  ·  {active.Count} surfing" : $"{heroMap}  ·  new map, updating...";
-            // Busy servers have 40+ people; you and the furthest along are enough.
-            const int shown = 12;
-            var more = Math.Max(0, active.Count - shown);
             var youSpectate = server.Players.Any(p => p.Zone == -1 && string.Equals(p.SteamId, yourSteamId, StringComparison.OrdinalIgnoreCase));
             var spectators = spectating == 0 ? null
                 : youSpectate ? (spectating == 1 ? "you're spectating" : $"{spectating} spectating, including you")
                 : $"{spectating} spectating";
-            LiveSpectators = string.Join("  ·  ", new[] { more > 0 ? $"+ {more} more surfing" : null, spectators }.Where(s => s != null));
+            var hidden = all ? 0 : Math.Max(0, active.Count - PlayersShown);
+            var more = hidden > 0 ? $"+ {hidden} more surfing  -  show everyone" : all && active.Count > PlayersShown ? "show fewer" : null;
+            var rows = new List<LivePlayerRow>();
             foreach (var p in active
                 .OrderByDescending(p => string.Equals(p.SteamId, yourSteamId, StringComparison.OrdinalIgnoreCase))
                 .ThenBy(p => (p.Zone ?? 0) >= 30)
                 .ThenByDescending(p => p.Zone ?? 0)
                 .ThenByDescending(p => p.ConnectedSeconds ?? 0)
-                .Take(shown))
+                .Take(all ? int.MaxValue : PlayersShown))
             {
                 var zone = p.Zone ?? 0;
                 var bonus = zone >= 30;
@@ -550,9 +641,9 @@ namespace KsfCompanion.Ui
                     FetchedAt = server.FetchedAt,
                 };
                 row.Update(DateTime.Now);
-                LivePlayers.Add(row);
+                rows.Add(row);
             }
-            Tick(DateTime.Now);
+            return (rows, active.Count, more, spectators ?? "");
         }
 
         public void SetNextMap(string map, int? tier)
@@ -561,11 +652,17 @@ namespace KsfCompanion.Ui
             NextMap = map == null ? "" : tier > 0 ? $"{map}  ·  T{tier}" : map;
         }
 
-        public void SetSession(DateTime start, int maps, int finishes, int pbs)
+        /// <summary>
+        /// This run of the game: <paramref name="played"/> is the time on servers before <paramref name="runningSince"/>,
+        /// when you were last on one again (null while you're not: the clock waits).
+        /// </summary>
+        public void SetSession(TimeSpan played, DateTime? runningSince, int maps, int finishes, int pbs)
         {
-            sessionStart = start;
+            sessionPlayed = played;
+            sessionSince = runningSince;
             HasSession = true;
             SessionTitle = "THIS SESSION";
+            SessionTimeLabel = runningSince == null ? "paused - not on a server" : "played";
             SessionMaps = maps.ToString(Inv);
             SessionFinishes = finishes.ToString(Inv);
             SessionPbs = pbs.ToString(Inv);
@@ -575,18 +672,22 @@ namespace KsfCompanion.Ui
             Tick(DateTime.Now);
         }
 
-        string sessionMapsLabel = "maps", sessionFinishesLabel = "finishes", sessionPbsLabel = "new PBs";
+        string sessionMapsLabel = "maps", sessionFinishesLabel = "finishes", sessionPbsLabel = "new PBs", sessionTimeLabel = "played";
+        /// <summary>"played", or "paused - not on a server" while the clock waits.</summary>
+        public string SessionTimeLabel { get => sessionTimeLabel; set => Set(ref sessionTimeLabel, value); }
         public string SessionMapsLabel { get => sessionMapsLabel; set => Set(ref sessionMapsLabel, value); }
         public string SessionFinishesLabel { get => sessionFinishesLabel; set => Set(ref sessionFinishesLabel, value); }
         public string SessionPbsLabel { get => sessionPbsLabel; set => Set(ref sessionPbsLabel, value); }
 
-        /// <summary>The game closed: keep the numbers up, stop the clock.</summary>
-        public void EndSession()
+        /// <summary>The game closed: keep the numbers up, stop the clock at <paramref name="played"/>.</summary>
+        public void EndSession(TimeSpan played)
         {
             if (!HasSession) return;
-            Tick(DateTime.Now);
-            sessionStart = null;
+            sessionPlayed = played;
+            sessionSince = null;
             SessionTitle = "LAST SESSION";
+            SessionTimeLabel = "played";
+            Tick(DateTime.Now);
         }
 
         public void Celebrate(string title, string detail)
@@ -626,12 +727,12 @@ namespace KsfCompanion.Ui
             // Your own server's row shows the same countdown as the live card.
             foreach (var server in Servers)
             {
+                server.Update(now);
                 if (server.IsYours && HasLiveTime) server.TimeLeft = LiveTimeLeft;
-                else server.Update(now);
             }
-            if (sessionStart is DateTime start)
+            if (HasSession)
             {
-                var t = now - start;
+                var t = sessionPlayed + (sessionSince is DateTime since && now > since ? now - since : TimeSpan.Zero);
                 SessionTime = t.TotalHours >= 1 ? string.Format(Inv, "{0}:{1:00}:{2:00}", (int)t.TotalHours, t.Minutes, t.Seconds)
                                                 : string.Format(Inv, "{0}:{1:00}", t.Minutes, t.Seconds);
             }
@@ -951,8 +1052,8 @@ namespace KsfCompanion.Ui
         public void ShowGroupGoal(GroupGoal goal)
         {
             GroupGoalTitle = goal.Group == 0 ? "TO THE TOP 10" : "TO GROUP " + goal.Group;
-            GroupGoalNote = goal.FirstRank is int first && goal.LastRank is int last && goal.Total > 0
-                ? string.Format(Inv, "ranks {0:N0}-{1:N0} of {2:N0}", first, last, goal.Total) : "";
+            GroupGoalNote = goal.FirstRank is int first && goal.LastRank is int last
+                ? string.Format(Inv, "ranks {0:N0}-{1:N0}", first, last) + (goal.Total > 0 ? string.Format(Inv, " of {0:N0}", goal.Total) : "") : "";
             // In it: ranked there, or (a time ksf.surf hasn't ranked yet) faster than whoever is at its end.
             GroupGoalReached = goal.LastRank is int end
                 && (goal.YourRank is int rank ? rank <= end : goal.YourTime is double time && goal.Cutoff is double cut && time < cut);
@@ -1011,28 +1112,26 @@ namespace KsfCompanion.Ui
             });
             ClearMapSearchCommand = new RelayCommand(_ => MapSearch = "");
             HidePartCommand = new RelayCommand(p => { if (p is string key) Layout[key] = false; });
-            ShowAllPartsCommand = new RelayCommand(_ => Layout.ShowAll());
-            SetViewCommand = new RelayCommand(p => Layout.IsSimple = p as string == "simple");
-            Layout.PropertyChanged += (s, e) =>
+            ToggleServerCommand = new RelayCommand(p =>
             {
-                if (e.PropertyName != nameof(DashboardLayout.IsSimple)) return;
-                foreach (var name in new[] { nameof(LeaderLimit), nameof(LiveLimit), nameof(ServerLimit), nameof(RecentLimit) }) Raise(name);
-                RenderLeaderboard();
-            };
+                openServer = p as string == openServer ? null : p as string;
+                RenderServers();
+            });
+            ShowEveryoneCommand = new RelayCommand(p =>
+            {
+                if (!(p is string key)) return;
+                if (!everyoneShown.Remove(key)) everyoneShown.Add(key);
+                if (key == "live") RenderLiveServer();
+                else RenderServers();
+            });
+            ShowAllPartsCommand = new RelayCommand(_ => Layout.ShowAll());
         }
 
-        // ----- what's on the dashboard: parts you've hidden, and Simple or Advanced -----
+        // ----- what's on the dashboard: parts you've hidden, and how big -----
         public DashboardLayout Layout { get; } = new DashboardLayout();
         /// <summary>Parameter: the part to hide ("times", "servers"...).</summary>
         public ICommand HidePartCommand { get; }
         public ICommand ShowAllPartsCommand { get; }
-        /// <summary>Parameter: "simple" or "advanced".</summary>
-        public ICommand SetViewCommand { get; }
-        // How many rows the lists show: the Simple view keeps them short.
-        public int LeaderLimit => Layout.IsSimple ? 5 : 10;
-        public int LiveLimit => Layout.IsSimple ? 6 : 12;
-        public int ServerLimit => Layout.IsSimple ? 6 : 99;
-        public int RecentLimit => Layout.IsSimple ? 3 : 99;
 
         /// <summary>Rows on show that have no picture yet: Companion loads them.</summary>
         public event Action<List<MapResultRow>> ThumbsNeeded;
@@ -1141,6 +1240,11 @@ namespace KsfCompanion.Ui
         /// <summary>The size slider moved (to save it).</summary>
         public event Action<double> TileSizeChanged;
         public ICommand SetMapKindCommand { get; }
+        string nominateTick = "css";
+        /// <summary>Whose finished maps the nominate page marks: your 66 tick ("css") or 100 tick ("css100t") records.</summary>
+        public string NominateTick { get => nominateTick; set => Set(ref nominateTick, value); }
+        /// <summary>Parameter: "css" or "css100t".</summary>
+        public ICommand NominateTickCommand { get; set; }
         public string MapStatus { get => mapStatus; set => Set(ref mapStatus, value); }
         public bool HasMoreMaps { get => hasMoreMaps; set => Set(ref hasMoreMaps, value); }
 
@@ -1391,8 +1495,7 @@ namespace KsfCompanion.Ui
 
             var wr = top.FirstOrDefault(t => t.Rank == 1) ?? top.FirstOrDefault();
             string Show(double seconds) => leaderZone == 0 ? Format.Time(seconds) : Format.Short(seconds);
-            // The Simple view shows the top 5 (and you).
-            top = top.Take(LeaderLimit).ToList();
+            top = top.Take(10).ToList();
             foreach (var row in top)
             {
                 Leaders.Add(new LeaderRow
@@ -1544,14 +1647,38 @@ namespace KsfCompanion.Ui
             return Later.Where(r => r.Thumb == null).ToList();
         }
 
+        // The server list: what it was made from (it's made again when a server is clicked open or closed), the server
+        // that's open, the lists showing everyone ("live" is your server's card), and your progress on each map.
+        IList<KsfServer> shownServers = new List<KsfServer>();
+        string yourServerAddress, openServer;
+        ICollection<string> savedServerMaps = new HashSet<string>();
+        readonly HashSet<string> everyoneShown = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        readonly Dictionary<string, MapProgress> mapProgress = new Dictionary<string, MapProgress>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Whose progress and which "you" the server list shows.</summary>
+        public string YourSteamId { get; set; }
+        /// <summary>Parameter: a server's address - opens it (its players show under it), or closes it again.</summary>
+        public ICommand ToggleServerCommand { get; }
+        /// <summary>Parameter: a server's address, or "live" for your server's card - all its players, or the first 12 again.</summary>
+        public ICommand ShowEveryoneCommand { get; }
+
         public void SetServers(IList<KsfServer> servers, string yourServerAddress, ICollection<string> savedMaps)
         {
+            shownServers = servers;
+            this.yourServerAddress = yourServerAddress;
+            savedServerMaps = savedMaps;
+            RenderServers();
+        }
+
+        void RenderServers()
+        {
+            var servers = shownServers;
             Servers.Clear();
             foreach (var s in servers.OrderByDescending(s => s.Address == yourServerAddress).ThenByDescending(s => s.PlayerCount))
             {
-                Servers.Add(new ServerRow
+                var row = new ServerRow
                 {
                     Name = s.Name,
+                    Game = s.Game,
                     Map = s.Map,
                     Tier = "T" + s.Tier,
                     TierBrush = TierColor(s.Tier),
@@ -1560,14 +1687,51 @@ namespace KsfCompanion.Ui
                     Players = s.PlayerCount.ToString(Inv),
                     Address = s.Address,
                     IsYours = s.Address == yourServerAddress,
-                    IsSaved = savedMaps.Contains(s.Map),
+                    IsSaved = savedServerMaps.Contains(s.Map),
                     SecondsLeft = s.TimeLeftSeconds,
                     FetchedAt = s.FetchedAt,
-                });
-                Servers[Servers.Count - 1].Update(DateTime.Now);
+                    IsExpanded = s.Address == openServer,
+                };
+                if (row.IsExpanded)
+                {
+                    var players = Players(s, YourSteamId, fresh: true, all: everyoneShown.Contains(s.Address));
+                    foreach (var player in players.Rows) row.PlayerRows.Add(player);
+                    row.PlayersMore = players.More;
+                    row.PlayersNote = s.Players.Count == 0 ? "nobody's on it right now" : players.Spectators;
+                }
+                ShowProgress(row);
+                row.Update(DateTime.Now);
+                Servers.Add(row);
             }
             HasServers = Servers.Count > 0;
             ServersUpdated = "updated " + DateTime.Now.ToString("HH:mm", Inv);
+        }
+
+        /// <summary>Your progress on a map (css / css100t) for the server list; null forgets it.</summary>
+        public void SetMapProgress(string game, string map, MapProgress progress)
+        {
+            var key = game + "|" + map;
+            if (progress == null) mapProgress.Remove(key);
+            else mapProgress[key] = progress;
+            foreach (var row in Servers.Where(r => r.Game == game && string.Equals(r.Map, map, StringComparison.OrdinalIgnoreCase))) ShowProgress(row);
+        }
+
+        void ShowProgress(ServerRow row)
+        {
+            if (!mapProgress.TryGetValue(row.Game + "|" + row.Map, out var p))
+            {
+                row.HasProgress = false;
+                return;
+            }
+            row.HasProgress = true;
+            row.YourTime = p.Time is double time ? Format.Time(time) : "not done";
+            row.YourTimeBrush = p.Time != null ? GoodBrush : NotDoneBrush;
+            row.StagePattern = p.Stages;
+            row.BonusPattern = p.Bonuses;
+            var bits = new List<string> { p.Time is double t ? "Your time " + Format.Time(t) : "You haven't finished it yet" };
+            if (p.Stages.Length > 1) bits.Add($"{p.StagesDone}/{p.Stages.Length} stages");
+            if (p.Bonuses.Length > 0) bits.Add($"{p.BonusesDone}/{p.Bonuses.Length} bonuses");
+            row.ProgressTip = string.Join("  ·  ", bits) + (row.Game == "css100t" ? "  (100 tick)" : "  (66 tick)");
         }
 
         /// <summary>What kind of map it is, as ksf.surf has it: "linear · 2 bonuses", "staged · 4 stages · 6 bonuses".</summary>

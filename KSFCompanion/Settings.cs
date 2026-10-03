@@ -15,9 +15,8 @@ namespace KsfCompanion
             ("tick", "auto", "which KSF records to show: auto (follows the server you're on), 66 or 100"),
             ("ksf_style", "0", "0 = normal, 1 = sideways, 2 = half-sideways, 3 = backwards"),
             ("run_server_commands", "0", "1 = when you join a map on a KSF server, run server_commands for you. KSF answers them in chat, so that's where the map info and your rank show up; off by default, as the dashboard and the F6 card show the same"),
-            ("server_commands", "sm_m; sm_mrank", "KSF commands to run then (same as typing !m and !mrank in chat), separated by ;"),
+            ("server_commands", "sm_m; sm_pr", "KSF commands to run then (same as typing /m and /pr in chat), separated by ;"),
             ("dashboard_on_game_start", "1", "1 = open the dashboard on your second monitor when CS:S starts (it won't take focus from the game)"),
-            ("view", "advanced", "the dashboard: simple (the essentials, bigger and cleaner) or advanced (every detail) - also the switch at the top of the dashboard"),
             ("hidden", "", "parts of the dashboard you've hidden (Customize at the top brings them back): map, timer, numbers, times, leaderboard, keys, live, session, level, later, servers, recent"),
             ("size", "100", "how big the dashboard is drawn, in percent (80 to 150) - also the Size slider in Customize"),
             ("group_goal", "auto", "the KSF group the dashboard's group tile shows the time to: auto (the next one up from yours), top10, or 1 to 6 - also the arrows on that tile"),
@@ -32,8 +31,12 @@ namespace KsfCompanion
         };
 
         // Replaced by newer settings; dropped when the file is rewritten.
-        // "announce" (on by default) became run_server_commands (off by default): the replies land in chat.
-        static readonly string[] Obsolete = { "ksf_game", "auto_card", "card_delay_seconds", "card_seconds", "announce" };
+        // "announce" (on by default) became run_server_commands (off by default): the replies land in chat. "view" was
+        // the Simple / Advanced switch: the dashboard always shows everything now.
+        static readonly string[] Obsolete = { "ksf_game", "auto_card", "card_delay_seconds", "card_seconds", "announce", "view" };
+
+        // Defaults that changed: a file that still has the old one (it's written out with every setting) gets the new one.
+        static readonly (string Key, string Old)[] OldDefaults = { ("server_commands", "sm_m; sm_mrank") };
 
         readonly string path;
         readonly Dictionary<string, string> values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -52,6 +55,8 @@ namespace KsfCompanion
                 }
             }
             foreach (var key in Obsolete) values.Remove(key);
+            foreach (var (key, old) in OldDefaults)
+                if (values.TryGetValue(key, out var value) && value == old) values.Remove(key);
             Save();
         }
 

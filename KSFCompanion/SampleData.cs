@@ -90,7 +90,7 @@ namespace KsfCompanion
             vm.Clock = clock;
             vm.SetServerLine(yours);
             vm.SetLiveServer(yours, You, info.Name);
-            vm.SetSession(now.AddMinutes(-83), 4, 3, 1);
+            vm.SetSession(TimeSpan.FromMinutes(71), now.AddMinutes(-12), 4, 3, 1);
             vm.SetNextMap("surf_cascade", 3);
 
             var later = new List<PlayLaterEntry>
@@ -100,7 +100,21 @@ namespace KsfCompanion
             };
             foreach (var row in vm.SetPlayLater(later, info.Name, servers)) row.Thumb = Picture(240, 135, row.Map.Length);
             var saved = new HashSet<string>(later.Select(e => e.Map), StringComparer.OrdinalIgnoreCase);
+            vm.YourSteamId = You;
             vm.SetServers(servers, yours.Address, saved);
+            // Your progress on each server's map, and another server clicked open to see who's on it.
+            for (var i = 0; i < servers.Count; i++)
+            {
+                var server = servers[i];
+                var zones = new List<ZoneRecord>();
+                if (i % 3 != 2) zones.Add(new ZoneRecord { ZoneId = 0, Time = 95.317 + i * 17.29 });
+                for (var z = 1; z <= server.StageCount; z++)
+                    if ((z + i) % 3 != 0) zones.Add(new ZoneRecord { ZoneId = z, Time = 12 + z });
+                for (var b = 0; b < server.BonusCount; b++)
+                    if ((b + i) % 2 == 0) zones.Add(new ZoneRecord { ZoneId = MapReport.FirstBonusZone + b, Time = 20 });
+                vm.SetMapProgress(server.Game, server.Map, MapProgress.From(zones, server.IsLinear, server.StageCount, server.BonusCount));
+            }
+            if (Environment.GetEnvironmentVariable("KSFC_PREVIEW_OPEN") != "0") vm.ToggleServerCommand.Execute(servers[1].Address);
             vm.SetRecent(Recent(now));
             vm.SetLevels(new List<(PlayerStanding, int?)>
             {
@@ -109,8 +123,7 @@ namespace KsfCompanion
             }, "css");
             vm.Tick(now);
 
-            vm.Layout.Load((Environment.GetEnvironmentVariable("KSFC_PREVIEW_HIDE") ?? "").Split(','),
-                Environment.GetEnvironmentVariable("KSFC_PREVIEW_MODE") == "simple");
+            vm.Layout.Load((Environment.GetEnvironmentVariable("KSFC_PREVIEW_HIDE") ?? "").Split(','));
             if (Environment.GetEnvironmentVariable("KSFC_PREVIEW_CELEBRATE") == "1")
             {
                 vm.CelebrationTitle = "NEW PERSONAL BEST";
@@ -177,6 +190,20 @@ namespace KsfCompanion
                             Points = 40000 - p * 3100,
                             Zone = zones[p],
                             ConnectedSeconds = 600 + p * 913,
+                        });
+                    server.PlayerCount = server.Players.Count;
+                }
+                else if (i == 1)
+                {
+                    // A busy one: more than its list shows at first.
+                    for (var p = 0; p < 17; p++)
+                        server.Players.Add(new KsfServerPlayer
+                        {
+                            SteamId = "STEAM_0:1:" + (5000 + p),
+                            Name = Players[(p + 1) % Players.Length] + (p >= Players.Length ? " " + p : ""),
+                            Rank = 300 + p * 517,
+                            Zone = p == 16 ? -1 : p % 4,
+                            ConnectedSeconds = 300 + p * 411,
                         });
                     server.PlayerCount = server.Players.Count;
                 }
