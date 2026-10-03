@@ -11,9 +11,13 @@ on:
         required: false
         default: ''
       api:
-        description: 'Or just print what ksf.surf answers at these paths (e.g. /api/maps/search/surf_bugs; for a page, the API paths it uses)'
+        description: 'Or just print what ksf.surf answers at these paths (e.g. /api/maps/search/surf_bugs /maps/surf_bugs)'
         required: false
         default: ''
+      find:
+        description: 'For a page in those paths: what to look for in it and its scripts (a regex; by default where they call the API)'
+        required: false
+        default: '/api/'
   push:
     paths: ['.github/workflows/screenshots.yml']
 
@@ -27,20 +31,38 @@ jobs:
         if: inputs.api != ''
         env:
           API: ${{ inputs.api }}
+          FIND: ${{ inputs.find }}
         run: |
           read -ra paths <<<"$API"
           for path in "${paths[@]}"; do
             echo "::group::$path"
-            reply=$(curl -sS --max-time 20 -A KSFCompanion/1.0 "https://ksf.surf$path")
+            curl -sS --max-time 20 -A KSFCompanion/1.0 -o reply -w 'HTTP %{http_code} %{content_type}\n' "https://ksf.surf$path"
             if [[ "$path" == /api/* ]]; then
-              (jq -c . <<<"$reply" 2>/dev/null || printf '%s\n' "$reply") | head -c 20000
+              (jq -c . reply 2>/dev/null || cat reply) | head -c 20000
               echo
             else
-              # A page of the site: where its scripts ask ksf.surf's API for data.
-              for script in $(grep -oE '(https://ksf\.surf)?/[^"'\'' <>]+\.js' <<<"$reply" | sed 's|^https://ksf\.surf||' | sort -u); do
-                sleep 1.2
-                curl -sS --max-time 20 "https://ksf.surf$script" | grep -oE '.{0,80}/api/.{0,120}' || true
-              done | sort -u
+              # A page of the site: where it and its scripts mention $FIND, and the pages it links to.
+              python3 -c 'if True:
+                  import re, subprocess, sys, time
+                  find = re.compile(sys.argv[1] or "/api/")
+                  page = open("reply", encoding="utf-8", errors="replace").read()
+                  def mentions(name, text):
+                      seen = []
+                      for m in find.finditer(text):
+                          bit = text[max(0, m.start() - 80):m.end() + 160].replace("\n", " ")
+                          if bit not in seen and len(seen) < 60:
+                              seen.append(bit)
+                              print(name + ": " + bit)
+                  print("links: " + " ".join(sorted(set(re.findall(r"href=\"(/[^\"#?]*)", page)))))
+                  mentions("page", page)
+                  # Its scripts: the ones it loads, and its own (named in the data Next.js puts in the page).
+                  scripts = set(re.findall(r"(/_next/static/[^\"\x27\\ <>]+?\.js)", page))
+                  scripts |= {"/_next/" + s for s in re.findall(r"(?<![\w/])(static/chunks/[^\"\x27\\ <>]+?\.js)", page)}
+                  for script in sorted(scripts):
+                      time.sleep(1.2)
+                      js = subprocess.run(["curl", "-sS", "--max-time", "20", "https://ksf.surf" + script], capture_output=True, text=True).stdout
+                      mentions(script.rsplit("/", 1)[-1], js)
+              ' "$FIND"
             fi
             echo "::endgroup::"
             # ksf.surf only takes about a request a second.
