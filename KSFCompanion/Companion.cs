@@ -194,6 +194,18 @@ namespace KsfCompanion
         readonly HashSet<string> staleRecords = new HashSet<string>(StringComparer.Ordinal);
         string recordsReading;
         DateTime nextRecordsTry;
+        bool recordsPageOpened;
+        // Your place on each map you've finished: the records page has only your group below the top 10, so the places
+        // are read map by map from the maps' leaderboards (the maps on show first), paced, and kept on disk. The queue is
+        // for one player, tick and style (placeKey); placeReading is on its way.
+        readonly MapRankStore mapRanks;
+        readonly List<(string Map, double Time)> placeQueue = new List<(string, double)>();
+        readonly HashSet<string> placesTried = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        string placeKey, placeSteamId, placeGame, placeReading;
+        int placeStyle, placesRead;
+        bool readingPlaces;
+        DateTime nextPlacesTry;
+        static readonly TimeSpan PlaceLifetime = TimeSpan.FromDays(3);
         // A read of the map list that stopped (ksf.surf busy or away) carries on from here, a little later.
         int catalogResumeAt = 1;
         DateTime nextCatalogTry, nextFinishedTry;
@@ -262,6 +274,7 @@ namespace KsfCompanion
             });
             vm.SetMapCatalog(catalog.Maps, loading: false);
             finishedMaps = new FinishedMaps(Path.Combine(Program.CacheDir, "finished-maps.txt"));
+            mapRanks = new MapRankStore(Path.Combine(Program.CacheDir, "map-ranks.txt"));
             ShowFinishedMaps();
             vm.ThumbsNeeded += rows => _ = LoadMapThumbsAsync(rows);
             vm.MapSearchChanged += text => _ = SearchKsfAsync(text);
@@ -276,6 +289,7 @@ namespace KsfCompanion
                 else if (vm.IsRecordsPage) EnsureRecords();
             };
             vm.Records.ThumbsNeeded += rows => _ = LoadRecordThumbsAsync(rows);
+            vm.Records.RowsChanged += QueuePlaces;
             vm.Records.RefreshCommand = new RelayCommand(_ => EnsureRecords(force: true));
             // Its search finds maps by their mappers too, once the nominate page has the map list.
             vm.Records.MappersOf = map => catalog.Find(map)?.Mappers;
@@ -532,6 +546,7 @@ namespace KsfCompanion
                 CheckGame(now);
                 RefreshIfStale(now);
                 UpdateStatus();
+                if (placeQueue.Count > 0 && !readingPlaces && now >= nextPlacesTry) ReadPlaces();
                 if (placementDirty) SavePlacement();
             }
             if (now >= nextCheckpoint)
@@ -1403,6 +1418,7 @@ namespace KsfCompanion
             var steamId = CurrentSteamId();
             var game = NominateGame;
             var key = RecordsKey();
+            recordsPageOpened = true;
             ShowRecords();
             if (key == null || key == recordsReading) return;
             var fresh = records.TryGetValue(key, out var known) && DateTime.Now - known.At < TimeSpan.FromMinutes(10) && !staleRecords.Contains(key);
@@ -1438,6 +1454,7 @@ namespace KsfCompanion
         /// <summary>A records list read from ksf.surf: kept, and its finished maps marked done on the nominate page too. How many are done.</summary>
         int KeepRecords(string key, List<MapRecord> list)
         {
+            ApplyPlaces(key, list);
             records[key] = (DateTime.Now, list);
             staleRecords.Remove(key);
             var done = list.Where(r => r.IsDone).Select(r => new FinishedMap
@@ -1473,12 +1490,148 @@ namespace KsfCompanion
             {
                 vm.Records.SetRecords(known.List, heading, known.At, loading);
                 vm.Records.Notice = "";
+                QueuePlaces();
             }
             else
             {
                 vm.Records.SetRecords(new List<MapRecord>(), heading, null, loading);
                 if (loading || !keepNotice) vm.Records.Notice = loading ? "Getting your records from ksf.surf..." : "";
             }
+        }
+
+        /// <summary>The places already read for a records list, on its maps (each where your time is still the one it was read for).</summary>
+        void ApplyPlaces(string key, List<MapRecord> list)
+        {
+            foreach (var record in list)
+            {
+                if (!record.IsDone || record.Rank != null) continue;
+                var known = mapRanks.Get(key, record.Map);
+                var same = known != null && MapRankStore.SameTime(known.Time, record.Time.Value);
+                record.Place = same ? known.Rank : (int?)null;
+                record.Players = same ? known.Players : null;
+            }
+        }
+
+        /// <summary>
+        /// Queues the records page's maps whose place isn't known (or is a few days old, or for an older time of yours)
+        /// and starts reading them: the maps on show first, then the rest, the most points first.
+        /// </summary>
+        void QueuePlaces()
+        {
+            var key = RecordsKey();
+            // Only for someone who has looked at the records page: the nominate page reads the same list.
+            if (!recordsPageOpened || key == null || !records.TryGetValue(key, out var known)) return;
+            if (key != placeKey)
+            {
+                placeKey = key;
+                placeSteamId = CurrentSteamId();
+                placeGame = NominateGame;
+                placeStyle = KsfStyle;
+                placesRead = 0;
+            }
+            var shown = vm.Records.Rows.Select(r => r.Map).ToList();
+            placeQueue.Clear();
+            placeQueue.AddRange(known.List.Where(r => NeedsPlace(key, r))
+                .OrderBy(r => shown.IndexOf(r.Map) is var i && i >= 0 ? i : int.MaxValue)
+                .ThenByDescending(r => r.Points ?? 0)
+                .Select(r => (r.Map, r.Time.Value)));
+            ShowPlaceProgress();
+            if (placeQueue.Count > 0 && DateTime.Now >= nextPlacesTry) ReadPlaces();
+        }
+
+        bool NeedsPlace(string key, MapRecord r)
+        {
+            if (!r.IsDone || r.Rank != null || string.Equals(r.Map, placeReading, StringComparison.OrdinalIgnoreCase)) return false;
+            if (placesTried.Contains(PlaceTry(key, r.Map, r.Time.Value))) return false;
+            var known = mapRanks.Get(key, r.Map);
+            return known == null || !MapRankStore.SameTime(known.Time, r.Time.Value) || DateTime.Now - known.At > PlaceLifetime;
+        }
+
+        static string PlaceTry(string key, string map, double time) => key + "\t" + map + "\t" + time.ToString("R", CultureInfo.InvariantCulture);
+
+        /// <summary>Reads the queued places one map at a time, paced like the other background lookups, until there are none left.</summary>
+        async void ReadPlaces()
+        {
+            if (readingPlaces) return;
+            readingPlaces = true;
+            var unsaved = 0;
+            try
+            {
+                while (placeQueue.Count > 0)
+                {
+                    var key = placeKey;
+                    var (map, time) = placeQueue[0];
+                    placeQueue.RemoveAt(0);
+                    placeReading = map;
+                    List<ZoneRecord> zones;
+                    try
+                    {
+                        zones = await api.GetPlayerZonesAsync(map, placeSteamId, placeGame, placeStyle, shutdown.Token);
+                    }
+                    catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
+                    {
+                        return;
+                    }
+                    catch (Exception ex) when (IsNetworkError(ex))
+                    {
+                        // ksf.surf busy, slow or away: the rest wait a minute.
+                        Program.Trace("ranks: " + ex.GetBaseException().Message);
+                        if (key == placeKey) placeQueue.Insert(0, (map, time));
+                        nextPlacesTry = DateTime.Now.AddMinutes(1);
+                        return;
+                    }
+                    finally
+                    {
+                        placeReading = null;
+                    }
+                    // (Asked once a session for this time of yours, whatever the answer.)
+                    placesTried.Add(PlaceTry(key, map, time));
+                    if (NotePlace(key, map, zones)) unsaved++;
+                    if (unsaved >= 10)
+                    {
+                        mapRanks.Save();
+                        unsaved = 0;
+                    }
+                    if (key == placeKey) placesRead++;
+                    ShowPlaceProgress();
+                }
+                // In order of rank, the rows go where their places put them now that they're in.
+                if (vm.Records.Sort == "rank") vm.Records.Refilter();
+            }
+            finally
+            {
+                readingPlaces = false;
+                if (unsaved > 0) mapRanks.Save();
+                ShowPlaceProgress();
+            }
+        }
+
+        /// <summary>
+        /// Your record on a map as ksf.surf has it (the map's zones, for one player, tick and style): its place kept, and on
+        /// the records page. False when there's no place in it.
+        /// </summary>
+        bool NotePlace(string key, string map, List<ZoneRecord> zones)
+        {
+            var main = zones?.FirstOrDefault(z => z.ZoneId == 0 && !z.Unsynced);
+            if (key == null || !(main?.Rank is int rank) || !(main.Time is double time)) return false;
+            mapRanks.Put(key, map, time, rank, main.TotalRanks);
+            if (records.TryGetValue(key, out var known))
+                foreach (var record in known.List.Where(r => r.Rank == null && r.Time is double t && MapRankStore.SameTime(t, time)
+                                                             && string.Equals(r.Map, map, StringComparison.OrdinalIgnoreCase)))
+                {
+                    record.Place = rank;
+                    record.Players = main.TotalRanks;
+                    if (key == RecordsKey()) vm.Records.PlaceRead(record);
+                }
+            return true;
+        }
+
+        void ShowPlaceProgress()
+        {
+            var left = placeQueue.Count + (placeReading != null ? 1 : 0);
+            vm.Records.PlaceProgress = left > 0 && placeKey == RecordsKey() && DateTime.Now >= nextPlacesTry
+                ? $"reading your ranks: {placesRead:N0} of {placesRead + left:N0}"
+                : "";
         }
 
         async Task LoadRecordThumbsAsync(List<RecordRow> rows)
@@ -2129,6 +2282,8 @@ namespace KsfCompanion
             }
             var before = report;
             report = fresh;
+            // Your place on it, for the records page (before the times ksf.surf doesn't have yet go in).
+            if (fresh.PersonalError == null && NotePlace(FinishedMaps.Key(CurrentSteamId(), game, KsfStyle), fresh.Info?.Name ?? map, fresh.Zones)) mapRanks.Save();
             // Times you've set in game that ksf.surf doesn't have yet stay on show.
             ApplyLocalBests(fresh);
             if (fresh.Main?.Time is double best) MarkFinished(fresh.Info?.Name ?? map, best, game);
@@ -2653,6 +2808,7 @@ namespace KsfCompanion
             var steamId = CurrentSteamId();
             if (steamId == null || loadingProgress) return;
             loadingProgress = true;
+            var placesNoted = false;
             try
             {
                 foreach (var server in servers.ToList())
@@ -2670,6 +2826,7 @@ namespace KsfCompanion
                         if (DateTime.Now < api.BusyUntil) break;
                         known = (DateTime.Now, await api.GetPlayerZonesAsync(server.Map, steamId, server.Game, KsfStyle, shutdown.Token));
                         serverMapRecords[key] = known;
+                        if (NotePlace(FinishedMaps.Key(steamId, server.Game, KsfStyle), server.Map, known.Zones)) placesNoted = true;
                     }
                     vm.SetMapProgress(server.Game, server.Map, MapProgress.From(known.Zones, server.IsLinear, server.StageCount, server.BonusCount));
                 }
@@ -2682,6 +2839,7 @@ namespace KsfCompanion
             finally
             {
                 loadingProgress = false;
+                if (placesNoted) mapRanks.Save();
             }
         }
 

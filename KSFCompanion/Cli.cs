@@ -191,6 +191,24 @@ namespace KsfCompanion
                 output.WriteLine(string.Format(CultureInfo.InvariantCulture, "  {0,-30} T{1} {2,-6} {3,10} {4,10} {5,5} {6,6:0} pts {7,4}x {8:yyyy-MM-dd}  stages {9}  bonuses {10}",
                     r.Map, r.Tier, r.IsLinear ? "linear" : "staged", r.Time is double t ? Format.Time(t) : "-", r.WrDiff is double d ? "+" + Format.Short(d) : "",
                     r.Rank is int k ? "#" + k : r.Group is int g ? "g" + g : "", r.Points ?? 0, r.Completions ?? 0, r.Date, Bits(r.Stages), Bits(r.Bonuses)));
+
+            // Below the top 10 the page gives only the group: the Records tab reads each map's place from its own
+            // leaderboard. A few of them here, checked against the page (the same run, a place in that group).
+            foreach (var r in RecordsViewModel.Sorted(records, "points").Where(r => r.IsDone && r.Rank == null && r.Group != null).Take(6))
+            {
+                var zones = Task.Run(() => api.GetPlayerZonesAsync(r.Map, steamId, game, style, CancellationToken.None)).GetAwaiter().GetResult();
+                var main = zones.FirstOrDefault(z => z.ZoneId == 0);
+                var same = main?.Time is double time && MapRankStore.SameTime(time, r.Time.Value);
+                if (same && main.Rank is int place)
+                {
+                    r.Place = place;
+                    r.Players = main.TotalRanks;
+                }
+                var total = main?.TotalRanks ?? 0;
+                output.WriteLine(string.Format(CultureInfo.InvariantCulture, "  place on {0,-30} page {1:R}  leaderboard {2}  {3}  #{4} of {5}  group {6} ({7}-{8} by the rule)",
+                    r.Map, r.Time, main?.Time?.ToString("R", CultureInfo.InvariantCulture) ?? "-", same ? "same run" : "NOT THE SAME RUN", main?.Rank, main?.TotalRanks,
+                    r.Group, KsfGroups.FirstRank(r.Group.Value, total), KsfGroups.LastRank(r.Group.Value, total)));
+            }
             if (args.Length < 4) return 0;
 
             StartHeadless();

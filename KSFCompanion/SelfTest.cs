@@ -48,7 +48,7 @@ namespace KsfCompanion
                 Section("groups", () => Groups());
                 Section("leaving a server", () => Leaving());
                 Section("private servers", () => PrivateServers());
-                Section("records page", () => RecordsPage());
+                Section("records page", () => RecordsPage(root));
                 Section("input checks", () => Inputs(root));
                 Section("game config", () => Config(root));
                 Section("rcon", () => Rcon(root));
@@ -329,7 +329,7 @@ namespace KsfCompanion
         /// Your records page on ksf.surf, as it sends its list (October 2026): every map, in Next.js's stream of JSON
         /// strings - a map can be cut in two between them.
         /// </summary>
-        static void RecordsPage()
+        static void RecordsPage(string root)
         {
             var data = "26:[\"$\",\"$L27\",null,{\"data\":["
                 + "{\"mapName\":\"surf_ambient_njv\",\"isLinear\":true,\"zoneID\":0,\"tier\":4,\"cp_count\":5,\"b_count\":0,\"time\":null,\"wrDiff\":null,\"count\":null,\"date\":null,\"points\":null,\"rank\":null,\"stages\":[],\"bonuses\":[]},"
@@ -409,6 +409,51 @@ namespace KsfCompanion
             page.SetSortCommand.Execute("name");
             page.FlipSortCommand.Execute(null);
             Check("Z-A", Order() == "yolo chasm anoobis andromeda ambient_njv" && page.SortDirection == "Z-A", Order());
+
+            // Below the top 10 the records page gives only your group: your place comes from the map's own leaderboard,
+            // a map at a time, after the page is up.
+            var placed = new List<MapRecord>
+            {
+                new MapRecord { Map = "surf_a", Time = 50, Group = 2, Points = 300 },
+                new MapRecord { Map = "surf_b", Time = 60, Group = 1, Points = 200 },
+                new MapRecord { Map = "surf_c", Time = 70, Group = 1, Points = 250, Place = 40, Players = 2770 },
+                new MapRecord { Map = "surf_d", Time = 80, Rank = 7, Points = 900 },
+                new MapRecord { Map = "surf_e", Time = 90, Group = 2, Points = 100, Place = 1523, Players = 9001 },
+            };
+            var ranks = new RecordsViewModel(new MapThumbs());
+            ranks.SetRecords(placed, "you  ·  66T", null, loading: false);
+            ranks.Sort = "rank";
+            string Ranked() => string.Join(" ", ranks.Rows.Select(r => r.Map.Substring(5)));
+            Check("by rank: the top 10, then each group by place (a place not read yet at the end of its group)", Ranked() == "d c b e a", Ranked());
+            RecordRow RowOf(string map) => ranks.Rows.First(r => r.Map == map);
+            var c = RowOf("surf_c");
+            var b = RowOf("surf_b");
+            Check("your place, with your group after it", c.Rank == "#40" && c.RankGroup == " · G1" && c.RankTip == "40th of 2,770 players  ·  group 1"
+                && RowOf("surf_e").Rank == "#1,523" && RowOf("surf_e").RankGroup == " · G2", $"{c.Rank}{c.RankGroup} / {c.RankTip} / {RowOf("surf_e").Rank}");
+            Check("just the group until the place is read", b.Rank == "G1" && b.RankGroup == "" && b.RankTip == "Group 1", $"{b.Rank}{b.RankGroup} / {b.RankTip}");
+            Check("the top 10 as before", RowOf("surf_d").Rank == "#7" && RowOf("surf_d").RankGroup == "", RowOf("surf_d").Rank);
+            placed[1].Place = 35;
+            placed[1].Players = 2770;
+            ranks.PlaceRead(placed[1]);
+            Check("a place read shows on its row at once", b.Rank == "#35" && b.RankGroup == " · G1" && b.HasRank, $"{b.Rank}{b.RankGroup}");
+            ranks.Refilter();
+            Check("and takes its place in the order", Ranked() == "d b c e a", Ranked());
+            ranks.SortReversed = true;
+            Check("the worst first", Ranked() == "a e c b d", Ranked());
+            ranks.PlaceProgress = "reading your ranks: 1 of 2";
+            Check("while they're read, the top says so", ranks.Status.EndsWith("  ·  reading your ranks: 1 of 2", StringComparison.Ordinal), ranks.Status);
+
+            // The places are kept on disk (for a player, tick and style): read once, again when your time changes.
+            var rankFile = Path.Combine(root, "map-ranks.txt");
+            var store = new MapRankStore(rankFile);
+            store.Put("STEAM_0:0:1|css|0", "surf_a", 50.0004, 35, 2770);
+            store.Put("STEAM_0:0:1|css|0", "surf_x\"; quit", 50, 1, 1);
+            store.Save();
+            var kept = new MapRankStore(rankFile).Get("STEAM_0:0:1|css|0", "surf_a");
+            Check("places kept on disk", kept != null && kept.Rank == 35 && kept.Players == 2770 && MapRankStore.SameTime(kept.Time, 50)
+                && new MapRankStore(rankFile).Get("STEAM_0:0:1|css100t|0", "surf_a") == null && new MapRankStore(rankFile).Get("STEAM_0:0:1|css|0", "surf_x\"; quit") == null);
+            Check("the same run, however ksf.surf rounds it", MapRankStore.SameTime(31.709295, 31.7093) && MapRankStore.SameTime(159.698669, 159.69866943359375)
+                && MapRankStore.SameTime(2676.613281, 2676.6131) && !MapRankStore.SameTime(31.709, 31.711) && !MapRankStore.SameTime(2676.61, 2676.6));
 
             // The nominate page's orders turn round the same way.
             var nominate = new DashboardViewModel();

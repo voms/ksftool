@@ -139,9 +139,10 @@ The Nominate tab (top of the window)
 
 The Records tab (top of the window)
   - Every KSF map with your record on it, like your records page on ksf.surf - with the maps'
-    pictures: your time, how far off the world record, your place (WR, #3) or group (G2),
-    points, completions, when you set it, and bars for the stages (one for the whole map on a
-    linear map) and the bonuses, green for the ones you've done and red for the rest.
+    pictures: your time, how far off the world record, your rank on the map (WR, #3, and below
+    the top 10 your rank with your group: #523 · G2 - hover it for how many players have a time
+    there), points, completions, when you set it, and bars for the stages (one for the whole map
+    on a linear map) and the bonuses, green for the ones you've done and red for the rest.
   - Sorted like ksf.surf (points) or by rank, time, WR diff, completions, date, tier or name; in
     the list, click a column's name to sort by it. Each order starts with the best; the button
     next to them (or clicking the order that's on again) turns it round: the fewest points, the
@@ -154,6 +155,11 @@ The Records tab (top of the window)
   - The list is read from ksf.surf when you open the tab (one request: the page has every map),
     again after 10 minutes or once you've finished a map, and whenever you click Refresh. Save
     puts a map on your play-later list; the arrow opens it on ksf.surf.
+  - Your rank below the top 10: ksf.surf's records page only has your group there, so each map's
+    rank is read from its own leaderboard, one map at a time (about a second each, the maps on
+    show first; "reading your ranks" at the top while it does). Until then the map shows your
+    group. The ranks are kept (~/.cache/ksf-companion/map-ranks.txt), so this happens once - then
+    again for a map when your time on it changes, or when its rank is 3 days old.
 
   Live: when you finish a map, your time shows the moment the timer announces it in chat - a new
   PB, first finish or WR gets a big banner with the time you took off and the points you got -

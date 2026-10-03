@@ -137,6 +137,11 @@ namespace KsfCompanion
         public int? Rank;
         /// <summary>Your group (1-6), when ksf.surf gives that instead of a place.</summary>
         public int? Group;
+        /// <summary>
+        /// Your place when the page gives only the group: read from the map's own leaderboard afterwards (MapRankStore),
+        /// with how many players have a time there.
+        /// </summary>
+        public int? Place, Players;
         /// <summary>Done or not, a stage at a time (a staged map's; none on a linear map) and a bonus at a time.</summary>
         public bool[] Stages = new bool[0], Bonuses = new bool[0];
 

@@ -178,8 +178,11 @@ It runs on X11 and on Wayland desktops (through XWayland).
 - Nominate or rock the vote in one click.
 
 ### Records
-- Every KSF map with its picture and your record on it, like your records page on ksf.surf: time, WR diff, rank or
-  group, points, completions, date, and which stages and bonuses you've done.
+- Every KSF map with its picture and your record on it, like your records page on ksf.surf: time, WR diff, your rank
+  on the map (with your group: `#523 · G2`), points, completions, date, and which stages and bonuses you've done.
+- ksf.surf's records page only shows your group below the top 10, so each map's rank is read from its own leaderboard
+  in the background (the maps on show first) and kept: it's read again when your time on the map changes, or after a
+  few days.
 - Sort and filter like the site (every order best-to-worst or worst-to-best), plus "Zones left": maps you've finished
   with stages or bonuses still to do.
 

@@ -313,6 +313,12 @@ namespace KsfCompanion
                     record.WrDiff = i % 7 == 0 ? 0 : 0.412 + i * 0.731;
                     record.Rank = i % 7 == 0 ? 1 : i % 5 == 1 ? 3 + i % 7 : (int?)null;
                     record.Group = record.Rank == null ? 1 + i % 6 : (int?)null;
+                    // Places read from the maps' leaderboards (one still on its way: just the group).
+                    if (record.Group is int group && i % 11 != 2)
+                    {
+                        record.Place = 4 + group * group * 57 + i * 3;
+                        record.Players = 2400 + i * 37;
+                    }
                     record.Points = record.Rank == 1 ? 1580.4 : record.Rank != null ? 640 - i * 3 : 220 - i * 6.5;
                     record.Completions = 1 + i * 7 % 40;
                     record.Date = now.AddDays(-(i * 9 % 70)).AddHours(-3);

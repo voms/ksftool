@@ -36,6 +36,8 @@ namespace KsfCompanion.Ui
     {
         Bitmap thumb;
         bool isSaved;
+        string rank = "", rankGroup = "", rankTip;
+        IBrush rankBrush, rankSoftBrush;
 
         public string Map { get; set; }
         public string TierText { get; set; }
@@ -52,12 +54,22 @@ namespace KsfCompanion.Ui
         public string Time { get; set; }
         /// <summary>"+3.297", or "WR" when the record is yours.</summary>
         public string WrDiff { get; set; }
-        /// <summary>"WR", "#3", "G2" (group 2) or "#1,234"; "" when not done.</summary>
-        public string Rank { get; set; } = "";
-        public bool HasRank => !string.IsNullOrEmpty(Rank);
-        public IBrush RankBrush { get; set; }
-        public IBrush RankSoftBrush { get; set; }
-        public string RankTip { get; set; }
+        /// <summary>Your place: "WR", "#3", "#523"; "G2" while only the group is known; "" when not done.</summary>
+        public string Rank
+        {
+            get => rank;
+            set
+            {
+                if (Set(ref rank, value ?? "")) Raise(nameof(HasRank));
+            }
+        }
+        public bool HasRank => rank.Length > 0;
+        /// <summary>The group, after a place below the top 10: " · G2".</summary>
+        public string RankGroup { get => rankGroup; set => Set(ref rankGroup, value ?? ""); }
+        public IBrush RankBrush { get => rankBrush; set => Set(ref rankBrush, value); }
+        public IBrush RankSoftBrush { get => rankSoftBrush; set => Set(ref rankSoftBrush, value); }
+        /// <summary>"523rd of 2,770 players  ·  group 2"</summary>
+        public string RankTip { get => rankTip; set => Set(ref rankTip, value); }
         /// <summary>"1,580"</summary>
         public string Points { get; set; }
         public string Completions { get; set; }
@@ -102,7 +114,7 @@ namespace KsfCompanion.Ui
         readonly MapThumbs thumbs;
         List<MapRecord> records = new List<MapRecord>();
         HashSet<string> saved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        string playing, search = "", sort = "points", show = "all", kind = "all", view = "tiles", status = "", heading = "", notice = "", updated = "";
+        string playing, search = "", sort = "points", show = "all", kind = "all", view = "tiles", status = "", heading = "", notice = "", updated = "", placeProgress = "";
         int tier, shown = PerPage, matching;
         bool loading, hasMore, hasRows, sortReversed;
 
@@ -128,6 +140,8 @@ namespace KsfCompanion.Ui
         public Func<string, string> MappersOf { get; set; }
         /// <summary>Rows on show that have no picture yet: Companion loads them.</summary>
         public event Action<List<RecordRow>> ThumbsNeeded;
+        /// <summary>Other rows on show: Companion reads the places of these maps first.</summary>
+        public event Action RowsChanged;
 
         /// <summary>Parameter: the order. The one that's on again turns it round.</summary>
         public ICommand SetSortCommand { get; }
@@ -237,6 +251,15 @@ namespace KsfCompanion.Ui
             }
         }
         public bool HasNotice => notice.Length > 0;
+        /// <summary>While your places are read from the maps' leaderboards: "reading your ranks: 45 of 210" (Companion's).</summary>
+        public string PlaceProgress
+        {
+            get => placeProgress;
+            set
+            {
+                if (Set(ref placeProgress, value ?? "")) UpdateStatus();
+            }
+        }
         public bool IsLoading { get => loading; set => Set(ref loading, value); }
         public bool HasMore { get => hasMore; set => Set(ref hasMore, value); }
         public bool HasRows { get => hasRows; set => Set(ref hasRows, value); }
@@ -265,6 +288,16 @@ namespace KsfCompanion.Ui
             }
             foreach (var row in Rows) row.IsSaved = saved.Contains(row.Map);
         }
+
+        /// <summary>A map's place, read from its leaderboard (it's on the record now): its rows show it.</summary>
+        public void PlaceRead(MapRecord record)
+        {
+            foreach (var row in Rows.Where(r => string.Equals(r.Map, record.Map, StringComparison.OrdinalIgnoreCase))) ShowRank(row, record);
+            UpdateStatus();
+        }
+
+        /// <summary>The rows again, in order (once the places are in, for the order by rank).</summary>
+        public void Refilter() => Filter();
 
         public void SetThumb(RecordRow row, Bitmap thumb)
         {
@@ -314,6 +347,7 @@ namespace KsfCompanion.Ui
             UpdateStatus();
             var missing = Rows.Where(r => r.Thumb == null).ToList();
             if (missing.Count > 0) ThumbsNeeded?.Invoke(missing);
+            RowsChanged?.Invoke();
         }
 
         /// <summary>
@@ -334,7 +368,7 @@ namespace KsfCompanion.Ui
             IOrderedEnumerable<MapRecord> By<T>(Func<MapRecord, T> key, bool lowIsBest) => lowIsBest != reversed ? done.OrderBy(key) : done.OrderByDescending(key);
             var ordered = sort switch
             {
-                // Within a group, the most points first (the fewest, the other way round).
+                // Then (a place not read yet, in its group) the most points first - the fewest, the other way round.
                 "rank" => reversed ? By(Standing, true).ThenBy(r => r.Points ?? 0) : By(Standing, true).ThenByDescending(r => r.Points ?? 0),
                 "time" => By(r => r.Time ?? 0, true),
                 "wrdiff" => By(r => r.WrDiff ?? double.MaxValue, true),
@@ -345,8 +379,17 @@ namespace KsfCompanion.Ui
             return ordered.ThenBy(r => r.Map, byName).Concat(notDone);
         }
 
-        /// <summary>How high you are on a map: the top 10 by place, then the groups, then places below them.</summary>
-        static int Standing(MapRecord r) => r.Rank is int rank && rank <= 10 ? rank : r.Group is int group ? 100 + group : r.Rank is int place ? 1000 + place : int.MaxValue;
+        /// <summary>
+        /// How high you are on a map, the best lowest: the top 10, then groups 1 to 6, then below them - by place within
+        /// each (a place not read yet goes at the end of its group). The groups are runs of places, so with every place
+        /// known this is simply the order of the places.
+        /// </summary>
+        static long Standing(MapRecord r)
+        {
+            var place = r.Rank ?? r.Place;
+            long band = place is int top && top <= 10 ? 0 : r.Group is int group ? group : 7;
+            return band * 100_000_000L + Math.Min(place ?? 99_999_999, 99_999_999);
+        }
 
         void UpdateStatus()
         {
@@ -357,13 +400,14 @@ namespace KsfCompanion.Ui
             }
             var filtered = search.Trim().Length > 0 || tier > 0 || kind != "all" || show != "all";
             var done = records.Count(r => r.IsDone);
-            var wrs = records.Count(r => r.Rank == 1);
-            var top10 = records.Count(r => r.Rank <= 10);
+            var wrs = records.Count(r => (r.Rank ?? r.Place) == 1);
+            var top10 = records.Count(r => (r.Rank ?? r.Place) <= 10);
             Status = (filtered ? $"{matching:N0} of {records.Count:N0} maps" : $"{records.Count:N0} maps")
                      + $"  ·  {done:N0} done"
                      + (wrs > 0 ? $"  ·  {wrs:N0} {(wrs == 1 ? "WR" : "WRs")}" : "")
                      + (top10 > 0 ? $"  ·  {top10:N0} in the top 10" : "")
-                     + (loading ? "  ·  updating..." : "");
+                     + (loading ? "  ·  updating..." : "")
+                     + (placeProgress.Length > 0 ? "  ·  " + placeProgress : "");
         }
 
         RecordRow ToRow(MapRecord r)
@@ -392,10 +436,7 @@ namespace KsfCompanion.Ui
                 IsSaved = saved.Contains(r.Map),
                 Thumb = thumbs.Get(r.Map),
             };
-            if (r.Rank == 1) SetRank(row, "WR", WrBrush, WrSoftBrush, "The world record is yours");
-            else if (r.Rank is int rank && rank <= 10) SetRank(row, "#" + rank.ToString(Inv), TopBrush, TopSoftBrush, $"{Ordinal(rank)} on the leaderboard (the top 10)");
-            else if (r.Group is int group) SetRank(row, "G" + group.ToString(Inv), GroupBrush, GroupSoftBrush, $"Group {group}");
-            else if (r.Rank is int place) SetRank(row, "#" + place.ToString("N0", Inv), PlaceBrush, PlaceSoftBrush, $"{Ordinal(place)} on the leaderboard");
+            ShowRank(row, r);
             row.Summary = r.IsDone
                 ? string.Join("  ·  ", new[]
                   {
@@ -407,9 +448,29 @@ namespace KsfCompanion.Ui
             return row;
         }
 
-        static void SetRank(RecordRow row, string text, IBrush brush, IBrush soft, string tip)
+        /// <summary>
+        /// Your place on the map, like the leaderboard: "WR", "#3", "#523 · G2" - the group too below the top 10, as
+        /// ksf.surf shows only that. Just "G2" until the place has been read.
+        /// </summary>
+        static void ShowRank(RecordRow row, MapRecord r)
+        {
+            var place = r.IsDone ? r.Rank ?? r.Place : null;
+            var of = r.Players is int players && place != null && players >= place ? $" of {players:N0} players" : "";
+            var group = r.Group is int g ? $"group {g}" : null;
+            if (!r.IsDone) SetRank(row, "", "", null, null, null);
+            else if (place == 1) SetRank(row, "WR", "", WrBrush, WrSoftBrush, "The world record is yours" + (of.Length > 0 ? $"  ·  1st{of}" : ""));
+            else if (place is int top && top <= 10) SetRank(row, "#" + top.ToString(Inv), "", TopBrush, TopSoftBrush, $"{Ordinal(top)}{of}  ·  the top 10");
+            else if (place is int inGroup && group != null)
+                SetRank(row, "#" + inGroup.ToString("N0", Inv), " · G" + r.Group.Value.ToString(Inv), GroupBrush, GroupSoftBrush, $"{Ordinal(inGroup)}{of}  ·  {group}");
+            else if (group != null) SetRank(row, "G" + r.Group.Value.ToString(Inv), "", GroupBrush, GroupSoftBrush, char.ToUpperInvariant(group[0]) + group.Substring(1));
+            else if (place is int below) SetRank(row, "#" + below.ToString("N0", Inv), "", PlaceBrush, PlaceSoftBrush, $"{Ordinal(below)}{of}");
+            else SetRank(row, "", "", null, null, null);
+        }
+
+        static void SetRank(RecordRow row, string text, string group, IBrush brush, IBrush soft, string tip)
         {
             row.Rank = text;
+            row.RankGroup = group;
             row.RankBrush = brush;
             row.RankSoftBrush = soft;
             row.RankTip = tip;
