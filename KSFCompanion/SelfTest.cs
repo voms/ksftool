@@ -108,6 +108,8 @@ namespace KsfCompanion
                 Check("the logged-in account from registry.vdf", id == "STEAM_0:0:61728", id);
                 File.WriteAllText(Path.Combine(home, ".steam", "registry.vdf"), "\"Registry\" { \"HKCU\" { \"Software\" { \"Valve\" { \"Steam\" { \"ActiveProcess\" { \"ActiveUser\" \"0\" } } } } } }");
                 Check("logged out: the last account from loginusers.vdf", SteamLocator.FindSteamId("auto") == "STEAM_0:1:61728", SteamLocator.FindSteamId("auto"));
+                File.WriteAllText(Path.Combine(steam, "config", "loginusers.vdf"), "\"users\" { \"76561197960389185\" { \"AccountName\" \"me\" } }");
+                Check("neither says: the account Steam saved settings for last", SteamLocator.FindSteamId("auto") == "STEAM_0:0:61728", SteamLocator.FindSteamId("auto"));
                 var options = SteamLocator.LaunchOptions("STEAM_0:0:61728");
                 Check("CS:S's launch options", options == "-novid -usercon", options);
                 Check("-usercon is there", SteamLocator.HasLaunchOption(options, "-usercon") && !SteamLocator.HasLaunchOption("-usercontent", "-usercon"));

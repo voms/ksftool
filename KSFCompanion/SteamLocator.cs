@@ -128,7 +128,21 @@ namespace KsfCompanion
                 var recent = users.FirstOrDefault(u => u.Value is Vdf.Node user && user.TextAt("MostRecent") == "1").Key;
                 if (recent != null && ParseSteamId(recent) is string id) return id;
             }
-            return null;
+
+            // Neither says (newer Steam, or files it writes differently): the account whose settings Steam saved last.
+            var newest = SteamRoots()
+                .SelectMany(steam => SafeDirectories(Path.Combine(steam, "userdata")))
+                .Select(dir => (account: uint.TryParse(Path.GetFileName(dir), out var a) ? a : 0, config: Path.Combine(dir, "config", "localconfig.vdf")))
+                .Where(u => u.account != 0 && File.Exists(u.config))
+                .OrderByDescending(u => File.GetLastWriteTimeUtc(u.config))
+                .FirstOrDefault();
+            return newest.account != 0 ? FromAccountId(newest.account) : null;
+        }
+
+        static IEnumerable<string> SafeDirectories(string path)
+        {
+            try { return Directory.Exists(path) ? Directory.GetDirectories(path) : Array.Empty<string>(); }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { return Array.Empty<string>(); }
         }
 
         /// <summary>
