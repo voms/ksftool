@@ -91,7 +91,12 @@ The dashboard
   Private KSF servers aren't on ksf.surf's list: one counts as KSF's (live stage times, the
   session noticing when you leave it) from the first time it shows KSF's servers in chat
   ("[Surf Timer] - Expert - surf_boreas (7/60) IP: ..."), and is remembered in settings.ini
-  (ksf_servers - you can put one there yourself, as ip:port).
+  (ksf_servers - you can put one there yourself, as ip:port, or ip:port@100 for a 100 tick one).
+  It's in the KSF servers list too, marked "private server": KSF Companion asks it directly, the
+  way the game's server browser does - its name, map and who's on it, and your progress on its
+  map (once ksf.surf has the map). Only ksf.surf has the time left and where everyone is on the
+  map, so those stay empty. If it doesn't answer, it's still listed while you're on it, as the
+  game's own "status" showed it. ksf-companion --server ip:port prints what a server answers.
 
   66 tick / 100 tick: KSF keeps separate records for its 100 tick servers (US 100T, EU 100T).
   The dashboard follows the server you're on automatically (it knows which one the moment you

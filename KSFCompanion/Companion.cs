@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -33,8 +34,6 @@ namespace KsfCompanion
         static readonly Regex AddressLine = new Regex(@"^udp/ip\s*:\s*(?<address>\d{1,3}(?:\.\d{1,3}){3}:\d+)", RegexOptions.IgnoreCase);
         // Joining a server, before its map even starts loading: "Connected to 137.74.205.6:27018"
         static readonly Regex ConnectedLine = new Regex(@"^Connected to (?<address>\d{1,3}(?:\.\d{1,3}){3}:\d+)", RegexOptions.Compiled);
-        // "status" lists players as: #  67 "SomePlayer"  [U:1:123456789]  3:53:52  99  0 active
-        static readonly Regex StatusPlayerLine = new Regex(@"^#\s*\d+\s+(?:\d+\s+)?""(?<name>.+)""\s+\[U:1:(?<account>\d+)\]", RegexOptions.Compiled);
         // KSF's timer announces runs in chat: [Surf Timer] - SomePlayer finished in 08:23:89 (WR +07:16:94)
         static readonly Regex FinishLine = new Regex(@"^\[Surf Timer\] - (?<name>.+?) finished (?<zone>.*?)in (?<time>\d+(?:[:.]\d{1,3}){1,3})", RegexOptions.Compiled);
         // Comes just before your own finish line: "... You finished the map for the first time . You have received [47] points"
@@ -116,9 +115,14 @@ namespace KsfCompanion
         DateTime nextAnnounceTry, lastKsfChatAt = DateTime.MinValue;
 
         List<KsfServer> servers = new List<KsfServer>();
-        // Servers that are KSF's though ksf.surf's list doesn't have them (private ones): from settings.ini, and added
-        // by themselves when they show KSF's servers in chat.
-        readonly HashSet<string> extraKsfServers;
+        // Servers that are KSF's though ksf.surf's list doesn't have them (private ones), with their tick rate (css /
+        // css100t): from settings.ini, and added by themselves when they show KSF's servers in chat. What they last
+        // answered when asked themselves (for the server list), and maps looked up for them.
+        readonly Dictionary<string, string> extraKsfServers;
+        readonly Dictionary<string, KsfServer> privateServers = new Dictionary<string, KsfServer>();
+        readonly HashSet<string> mapsLookedUp = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // The server you're on as the game's "status" last showed it.
+        StatusAnswer lastStatus;
         KsfServer yourServer;
         int? lastRank, lastPoints;
         DateTime nextServerPoll, nextRecentPoll;
@@ -223,7 +227,7 @@ namespace KsfCompanion
             this.settings = settings;
             keys = KeyNames.From(settings);
             later = new PlayLaterList(Path.Combine(Program.DataDir, "play-later.txt"));
-            extraKsfServers = new HashSet<string>(settings.Get("ksf_servers").Split(new[] { ' ', ',', ';' }, StringSplitOptions.RemoveEmptyEntries));
+            extraKsfServers = ParseKsfServers(settings.Get("ksf_servers"));
             images = new ImageCache(api.Http);
             if (int.TryParse(settings.Get("last_rank"), out var rank)) lastRank = rank;
             if (int.TryParse(settings.Get("last_points"), out var points)) lastPoints = points;
@@ -425,7 +429,8 @@ namespace KsfCompanion
         {
             var lists = await Task.WhenAll(ServersOrEmpty(Tick66), ServersOrEmpty(Tick100));
             var all = lists[0].Concat(lists[1]).ToList();
-            if (all.Count > 0) servers = all;
+            // (The private servers stay till the next poll asks them again.)
+            if (all.Count > 0) servers = all.Concat(servers.Where(s => !s.FromKsf && all.All(k => k.Address != s.Address))).ToList();
             var server = all.FirstOrDefault(s => s.Address == address);
             if (server == null || address != connectedAddress) return;
             var before = Game;
@@ -754,6 +759,8 @@ namespace KsfCompanion
             {
                 var hostname = host.Groups[1].Value.Trim();
                 hostnameSeen?.TrySetResult(hostname);
+                // The first line of "status": its address, player count and players follow.
+                lastStatus = new StatusAnswer { Name = hostname };
                 onKsfServer = hostname.IndexOf("ksf", StringComparison.OrdinalIgnoreCase) >= 0 || IsKsfAddress(connectedAddress);
                 if (onKsfServer)
                 {
@@ -809,8 +816,10 @@ namespace KsfCompanion
                 // A KSF server if it's in KSF's list (or its name says so, once "status" has it) - not just because the
                 // last one was.
                 var known = servers.FirstOrDefault(s => s.Address == connectedAddress);
-                onKsfServer = known != null || extraKsfServers.Contains(connectedAddress);
+                onKsfServer = known != null || extraKsfServers.ContainsKey(connectedAddress);
                 if (known != null) ChooseTickEarly(known);
+                else if (extraKsfServers.TryGetValue(connectedAddress, out var privateGame))
+                    ChooseTickEarly(new KsfServer { Name = connectedAddress, Address = connectedAddress, Game = privateGame });
                 else _ = LookUpServerAsync(connectedAddress);
                 nextServerPoll = DateTime.MinValue;
                 return;
@@ -857,6 +866,7 @@ namespace KsfCompanion
                 var value = address.Groups["address"].Value;
                 // A server's answer to "status" (the game's own, off a server, would be this PC's).
                 if (!value.StartsWith("0.0.0.0", StringComparison.Ordinal) && !value.StartsWith("127.", StringComparison.Ordinal)) leaveCheck.Answered(DateTime.Now);
+                if (lastStatus != null && lastStatus.Address == null) lastStatus.Address = value;
                 if (value != connectedAddress)
                 {
                     connectedAddress = value;
@@ -867,14 +877,19 @@ namespace KsfCompanion
                 return;
             }
 
-            var player = StatusPlayerLine.Match(line);
-            if (player.Success)
+            if (StatusAnswer.Player(line) is { } player)
             {
-                if (uint.TryParse(player.Groups["account"].Value, out var account) && account == SteamLocator.AccountId(CurrentSteamId()))
+                if (player.Account == SteamLocator.AccountId(CurrentSteamId()))
                 {
-                    ourName = player.Groups["name"].Value;
+                    ourName = player.Name;
                     Program.Trace($"in-game name: {ourName}");
                 }
+                lastStatus?.Add(player.Name, SteamLocator.FromAccountId(player.Account), player.Connected);
+                return;
+            }
+            if (StatusAnswer.HumansIn(line) is int humans)
+            {
+                if (lastStatus != null) lastStatus.Humans = humans;
                 return;
             }
 
@@ -1638,13 +1653,32 @@ namespace KsfCompanion
         }
 
         /// <summary>A server address that's KSF's: on ksf.surf's list, or one of the private ones (ksf_servers in settings.ini).</summary>
-        bool IsKsfAddress(string address) => address != null && (servers.Any(s => s.Address == address) || extraKsfServers.Contains(address));
+        bool IsKsfAddress(string address) => address != null && (servers.Any(s => s.Address == address) || extraKsfServers.ContainsKey(address));
+
+        /// <summary>
+        /// ksf_servers in settings.ini: "ip:port" for a 66 tick server, "ip:port@100" for a 100 tick one, separated by
+        /// spaces - to the tick rate (css / css100t) by address.
+        /// </summary>
+        internal static Dictionary<string, string> ParseKsfServers(string setting)
+        {
+            var list = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in (setting ?? "").Split(new[] { ' ', ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var at = entry.IndexOf('@');
+                var address = at < 0 ? entry : entry.Substring(0, at);
+                if (!IPEndPoint.TryParse(address, out var ip) || ip.Port == 0) continue;
+                list[address] = at >= 0 && entry.Substring(at + 1).StartsWith("100", StringComparison.Ordinal) ? Tick100 : Tick66;
+            }
+            return list;
+        }
 
         /// <summary>The server you're on is KSF's though ksf.surf doesn't list it: from now on (and next time) it counts as one.</summary>
         void CountAsKsf(string address)
         {
-            if (!extraKsfServers.Add(address)) return;
-            settings.Set("ksf_servers", string.Join(" ", extraKsfServers.OrderBy(a => a, StringComparer.Ordinal)));
+            // 66 tick, like most of KSF's servers ("ip:port@100" in settings.ini for a 100 tick one).
+            if (!extraKsfServers.TryAdd(address, Tick66)) return;
+            settings.Set("ksf_servers", string.Join(" ", extraKsfServers.OrderBy(a => a.Key, StringComparer.Ordinal)
+                .Select(a => a.Value == Tick100 ? a.Key + "@100" : a.Key)));
             Program.Trace($"{address} counts as a KSF server (it shows KSF's servers in chat)");
             onKsfServer = true;
             EnsureLiveDemo();
@@ -2142,10 +2176,12 @@ namespace KsfCompanion
             pollingServers = true;
             try
             {
-                // 66 and 100 tick servers together, so you see every KSF server and where you are.
-                var lists = await Task.WhenAll(ServersOrEmpty(Tick66), ServersOrEmpty(Tick100));
+                // 66 and 100 tick servers together, so you see every KSF server and where you are - and KSF's private
+                // ones, which ksf.surf doesn't list: those are asked themselves.
+                var lists = await Task.WhenAll(ServersOrEmpty(Tick66), ServersOrEmpty(Tick100), PrivateServersAsync());
                 var list = lists[0].Concat(lists[1]).ToList();
                 if (list.Count == 0) return;
+                list.AddRange(lists[2].Where(p => list.All(s => s.Address != p.Address)));
                 servers = list;
                 var steamId = CurrentSteamId();
                 KsfServerPlayer you = null;
@@ -2181,6 +2217,8 @@ namespace KsfCompanion
                     : connectedAddress != null ? list.FirstOrDefault(s => s.Address == connectedAddress)
                     : listedOn;
                 var rankTick = listedOn?.Game == Tick100 ? "100T" : "66T";
+                // Your rank and points: ksf.surf's list has them (a private server only has your name).
+                if (listedOn?.FromKsf == false) you = null;
                 if (you != null && (you.Rank != lastRank || you.Points != lastPoints || settings.Get("last_rank_tick") != rankTick))
                 {
                     lastRank = you.Rank;
@@ -2199,13 +2237,13 @@ namespace KsfCompanion
                 _ = LoadServerProgressAsync();
                 vm.SetServerLine(yourServer != null && string.Equals(yourServer.Map, currentMap, StringComparison.OrdinalIgnoreCase) ? yourServer : null);
                 // ksf.surf's sample says when the map started (even from before an extension) and its time limit then.
-                if (yourServer != null && string.Equals(yourServer.Map, currentMap, StringComparison.OrdinalIgnoreCase))
+                if (yourServer != null && yourServer.FromKsf && string.Equals(yourServer.Map, currentMap, StringComparison.OrdinalIgnoreCase))
                     clock.FromKsf(yourServer.TimeLimitMinutes, yourServer.TimeLeftSeconds, yourServer.FetchedAt);
                 vm.SetLiveServer(yourServer, steamId, currentMap);
                 // Your stage or bonus, when KSF's list is up to date with the map you're on (1-30 stages, 31+ bonuses;
                 // 0 is the start zone, -1 spectating). Only used while the live timer text isn't coming in.
-                listedAsSpectating = yourServer != null && listedOn == yourServer && you.Zone == -1;
-                if (yourServer != null && listedOn == yourServer && string.Equals(yourServer.Map, currentMap, StringComparison.OrdinalIgnoreCase))
+                listedAsSpectating = yourServer != null && listedOn == yourServer && you?.Zone == -1;
+                if (you != null && yourServer != null && listedOn == yourServer && string.Equals(yourServer.Map, currentMap, StringComparison.OrdinalIgnoreCase))
                     SetCurrentZone(you.Zone >= 1 ? you.Zone : null, ZoneSource.ServerList);
                 RefreshLaterView();
             }
@@ -2214,6 +2252,95 @@ namespace KsfCompanion
                 pollingServers = false;
                 // Faster while you're on a KSF server, so the players and their stages stay current.
                 nextServerPoll = DateTime.Now.AddSeconds(yourServer != null ? 15 : 30);
+            }
+        }
+
+        /// <summary>
+        /// KSF's private servers (ksf_servers), which ksf.surf doesn't list: asked themselves, as a server browser does -
+        /// their name, map and players (without the players' stages and ranks, or the time left: only ksf.surf has those).
+        /// One that doesn't answer is shown as it last was, for a couple of minutes - or, while you're on it, as the
+        /// game's "status" last showed it.
+        /// </summary>
+        async Task<List<KsfServer>> PrivateServersAsync()
+        {
+            var steamId = CurrentSteamId();
+            var answers = await Task.WhenAll(extraKsfServers.ToList().Select(async pair =>
+            {
+                A2sInfo info = null;
+                List<A2sPlayer> players = null;
+                try
+                {
+                    info = await A2s.InfoAsync(pair.Key, TimeSpan.FromSeconds(2.5), shutdown.Token);
+                    if (info != null) players = await A2s.PlayersAsync(pair.Key, TimeSpan.FromSeconds(2.5), shutdown.Token);
+                }
+                catch (OperationCanceledException) { }
+                return (Address: pair.Key, Game: pair.Value, Info: info, Players: players);
+            }));
+            var now = DateTime.Now;
+            var list = new List<KsfServer>();
+            foreach (var answer in answers)
+            {
+                var status = !offServer && currentMap != null && answer.Address == connectedAddress && lastStatus?.Address == answer.Address ? lastStatus : null;
+                if (answer.Info == null || string.IsNullOrEmpty(answer.Info.Map))
+                {
+                    if (privateServers.TryGetValue(answer.Address, out var last) && now - last.FetchedAt < TimeSpan.FromMinutes(2)) list.Add(last);
+                    else if (status != null)
+                    {
+                        var fromStatus = PrivateServer(answer.Address, answer.Game, status.Name, currentMap, status.Humans ?? status.Players.Count);
+                        fromStatus.Players.AddRange(status.PlayersAt(now));
+                        list.Add(fromStatus);
+                    }
+                    continue;
+                }
+                var server = PrivateServer(answer.Address, answer.Game, answer.Info.Name, answer.Info.Map, answer.Info.Players - answer.Info.Bots);
+                if (answer.Players != null)
+                {
+                    foreach (var p in answer.Players)
+                    {
+                        if (string.IsNullOrWhiteSpace(p.Name) || A2s.LooksLikeBot(p.Name)) continue;
+                        server.Players.Add(new KsfServerPlayer { Name = p.Name, SteamId = IsMe(p.Name) ? steamId : null, ConnectedSeconds = (int)p.Seconds });
+                    }
+                }
+                // It doesn't say who's on it: as "status" showed them, while you're there.
+                else if (status != null) server.Players.AddRange(status.PlayersAt(now));
+                privateServers[answer.Address] = server;
+                list.Add(server);
+            }
+            return list;
+        }
+
+        /// <summary>A private server's row: its map's tier, stages and bonuses from KSF's map list (looked up once if it isn't there).</summary>
+        KsfServer PrivateServer(string address, string game, string name, string map, int players)
+        {
+            map = map.ToLowerInvariant();
+            var mapInfo = catalog.Find(map);
+            if (mapInfo == null) _ = LookUpMapAsync(map);
+            return new KsfServer
+            {
+                Game = game,
+                Name = string.IsNullOrWhiteSpace(name) ? address : name.Trim(),
+                Address = address,
+                Map = map,
+                Tier = mapInfo?.Tier ?? 0,
+                IsLinear = mapInfo?.IsLinear ?? false,
+                StageCount = mapInfo?.StageCount ?? 0,
+                BonusCount = mapInfo?.BonusCount ?? 0,
+                PlayerCount = Math.Max(0, players),
+                FromKsf = false,
+            };
+        }
+
+        /// <summary>A private server's map that isn't in KSF's map list (yet): ksf.surf's search has its tier, stages and bonuses.</summary>
+        async Task LookUpMapAsync(string map)
+        {
+            if (!mapsLookedUp.Add(map)) return;
+            try
+            {
+                catalog.Add((await api.SearchMapsAsync(map)).Where(m => string.Equals(m.Name, map, StringComparison.OrdinalIgnoreCase)));
+            }
+            catch (Exception ex) when (IsNetworkError(ex))
+            {
+                mapsLookedUp.Remove(map);
             }
         }
 
@@ -2382,6 +2509,8 @@ namespace KsfCompanion
                         ShowMapProgress(report);
                         if (report.PersonalError == null) continue;
                     }
+                    // A private server's map that ksf.surf doesn't know (or not yet): there's nothing to look up.
+                    if (!server.FromKsf && server.Tier == 0) continue;
                     var key = CacheKey(server.Game, server.Map);
                     if (!serverMapRecords.TryGetValue(key, out var known) || DateTime.Now - known.At > TimeSpan.FromMinutes(20))
                     {

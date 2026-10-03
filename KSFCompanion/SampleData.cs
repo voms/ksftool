@@ -213,6 +213,23 @@ namespace KsfCompanion
             // Your play-later map is on somewhere right now.
             servers[5].Map = "surf_lantern";
             servers[5].Tier = 5;
+            // A private KSF server (ksf_servers): it was asked itself, so nobody's stage or rank, and no time left.
+            var privateServer = new KsfServer
+            {
+                Game = "css",
+                Name = "Private surf",
+                Address = "192.0.2.40:27068",
+                Map = "surf_harbor",
+                Tier = 3,
+                StageCount = 5,
+                BonusCount = 1,
+                PlayerCount = 5,
+                FetchedAt = now.AddSeconds(-4),
+                FromKsf = false,
+            };
+            for (var p = 0; p < privateServer.PlayerCount; p++)
+                privateServer.Players.Add(new KsfServerPlayer { Name = Players[(p + 5) % Players.Length], ConnectedSeconds = 240 + p * 1290 });
+            servers.Add(privateServer);
             return servers;
         }
 

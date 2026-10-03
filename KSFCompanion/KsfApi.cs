@@ -54,6 +54,11 @@ namespace KsfCompanion
         public int TimeLimitMinutes;
         public DateTime FetchedAt = DateTime.Now;
         public List<KsfServerPlayer> Players = new List<KsfServerPlayer>();
+        /// <summary>
+        /// From ksf.surf: its players' stages, ranks and points, and its time left. False for a private KSF server, which
+        /// was asked itself (name, map and players only).
+        /// </summary>
+        public bool FromKsf = true;
     }
 
     sealed class KsfServerPlayer

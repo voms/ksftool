@@ -97,7 +97,8 @@ It runs on X11 and on Wayland desktops (through XWayland).
 - **Map info:** see the map you're on, its tier, the top 10, and the time left (including extends).
 - **Your rank:** see your KSF title, rank and points on 66 and 100 tick.
 - **Servers:** see every KSF server, its map (linear or staged) and your progress on it (your time, and the stages and
-  bonuses you've done). Click a server to see everyone on it, and join in one click.
+  bonuses you've done). Click a server to see everyone on it, and join in one click. Private KSF servers that ksf.surf
+  doesn't list are in it too, once they're in `ksf_servers` in settings.ini (see below).
 - **Session:** time on servers, maps, finishes and PBs. It waits while you're off a server and ends when CS:S closes.
 - **Play later:** press F5 in game to save a map for later.
 
@@ -134,7 +135,7 @@ unless you're hosting a server. Another port: `rcon_port` in settings.ini.
 
 | | |
 |---|---|
-| `~/.config/ksf-companion/settings.ini` | keys, binds, tick, `game_dir`, `rcon_port`, `window_frame`, ... (each one explained in the file) |
+| `~/.config/ksf-companion/settings.ini` | keys, binds, tick, `ksf_servers` (private KSF servers, `ip:port` each), `game_dir`, `rcon_port`, `window_frame`, ... (each one explained in the file) |
 | `~/.config/ksf-companion/play-later.txt` | your saved maps - edit it in any text editor |
 | `~/.cache/ksf-companion/` | map pictures, records and the map list from ksf.surf |
 | in `cstrike/` | a block in `cfg/autoexec.cfg`, `cfg/ksf_*.cfg`, `ksf_console.log` and, on KSF servers, `ksfc_live.dem` |

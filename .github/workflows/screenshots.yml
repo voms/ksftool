@@ -22,6 +22,10 @@ on:
         description: 'For JSON in those paths: just this part of it (a jq filter)'
         required: false
         default: '.'
+      server:
+        description: 'Or ask game servers what they tell a server browser, as the server list asks private KSF servers (ip:port ...)'
+        required: false
+        default: ''
   push:
     paths: ['.github/workflows/screenshots.yml']
 
@@ -77,8 +81,21 @@ jobs:
       - uses: cachix/install-nix-action@v31
         if: inputs.api == ''
 
+      - name: Ask game servers
+        if: inputs.api == '' && inputs.server != ''
+        env:
+          SERVER: ${{ inputs.server }}
+        run: |
+          nix build .#ksf-companion
+          read -ra servers <<<"$SERVER"
+          for server in "${servers[@]}"; do
+            echo "::group::$server"
+            ./result/bin/ksf-companion --server "$server" || true
+            echo "::endgroup::"
+          done
+
       - name: Draw the dashboard from ksf.surf
-        if: inputs.api == ''
+        if: inputs.api == '' && inputs.server == ''
         env:
           MAP: ${{ inputs.map }}
         run: |
@@ -96,7 +113,7 @@ jobs:
           ./result/bin/ksf-companion --card surf_utopia_njv
 
       - uses: actions/upload-artifact@v4
-        if: inputs.api == ''
+        if: inputs.api == '' && inputs.server == ''
         with:
           name: screenshots
           path: '*.png'

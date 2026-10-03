@@ -28,6 +28,8 @@ namespace KsfCompanion
             "                map \"sample\" = made-up data, no network needed)\n" +
             "ksf-companion --push \"<cmd>\"   send a console command to the running game and print its answer\n" +
             "ksf-companion --hud <demo.dem> show the timer text (stage you're on, stage finishes) found in a demo\n" +
+            "ksf-companion --server <ip:port>   ask a server what it tells a server browser (how a private KSF server\n" +
+            "               in ksf_servers shows in the server list)\n" +
             "ksf-companion --clock-test | --binds-test | --selftest   the built-in tests";
 
         public static int Run(string[] args, Settings settings)
@@ -83,6 +85,9 @@ namespace KsfCompanion
 
                     case "--preview" when args.Length > 2:
                         return Preview(args, settings, output);
+
+                    case "--server" when args.Length > 1:
+                        return Server(args[1], output);
 
                     case "--clock-test":
                         return ClockTest(output);
@@ -150,6 +155,35 @@ namespace KsfCompanion
         }
 
         /// <summary>What KSF Companion finds on this PC - the first thing to look at when something doesn't work.</summary>
+        /// <summary>What a game server tells a server browser about itself (A2S): what the server list shows of a private KSF server.</summary>
+        static int Server(string address, TextWriter output)
+        {
+            if (!System.Net.IPEndPoint.TryParse(address, out var endPoint) || endPoint.Port == 0)
+            {
+                output.WriteLine("that's not a server's address - it's ip:port, like 192.0.2.7:27015");
+                return 2;
+            }
+            var timeout = TimeSpan.FromSeconds(3);
+            var info = A2s.InfoAsync(address, timeout, CancellationToken.None).GetAwaiter().GetResult();
+            if (info == null)
+            {
+                output.WriteLine($"{address} didn't answer in {timeout.TotalSeconds:0} seconds: the server list can only show it while you're on it (from the game's \"status\")");
+                return 1;
+            }
+            output.WriteLine($"name:    {info.Name}");
+            output.WriteLine($"map:     {info.Map}");
+            output.WriteLine($"players: {Math.Max(0, info.Players - info.Bots)} ({info.Bots} bots, {info.MaxPlayers} max)");
+            var players = A2s.PlayersAsync(address, timeout, CancellationToken.None).GetAwaiter().GetResult();
+            if (players == null)
+            {
+                output.WriteLine("it doesn't say who's on it");
+                return 0;
+            }
+            foreach (var p in players.OrderBy(p => A2s.LooksLikeBot(p.Name)).ThenByDescending(p => p.Seconds))
+                output.WriteLine($"  {(A2s.LooksLikeBot(p.Name) ? "bot" : "   ")}  {Format.Duration(p.Seconds),9}  {p.Name}");
+            return 0;
+        }
+
         static int Status(Settings settings, TextWriter output)
         {
             void Line(string what, string value) => output.WriteLine($"{what,-24}{value}");

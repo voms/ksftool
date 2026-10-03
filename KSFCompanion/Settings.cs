@@ -25,7 +25,7 @@ namespace KsfCompanion
             ("key_save", "F5", "saves the current map to your play-later list (these three can also be changed on the Binds page)"),
             ("key_card", "F6", "hold to open the console with the KSF card for the current map"),
             ("key_list", "F7", "hold to open the console with your play-later list"),
-            ("ksf_servers", "", "more servers that count as KSF's (ip:port, separated by spaces): private ones aren't on ksf.surf's list. KSF Companion adds one by itself when it shows KSF's servers in chat"),
+            ("ksf_servers", "", "more servers that count as KSF's, and are in the server list (ip:port, separated by spaces; ip:port@100 for a 100 tick one): private ones aren't on ksf.surf's list. KSF Companion adds one by itself when it shows KSF's servers in chat"),
             ("game_dir", "auto", "your .../Counter-Strike Source/cstrike folder, or auto to find it through Steam (native, Flatpak or Snap)"),
             ("rcon_port", "27015", "the port on this PC that KSF Companion sends the game its console commands on (CS:S needs -usercon in its Steam launch options for that); change it if another program uses 27015"),
             ("window_frame", "custom", "custom = the dashboard draws its own title bar, system = use your desktop's title bar and borders instead"),

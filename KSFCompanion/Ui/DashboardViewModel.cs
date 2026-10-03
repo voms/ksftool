@@ -226,9 +226,12 @@ namespace KsfCompanion.Ui
         /// <summary>That nobody's on it, if so.</summary>
         public string PlayersNote { get; set; }
 
+        /// <summary>A private KSF server: not on ksf.surf, which is what has a server's time left.</summary>
+        public bool IsPrivate { get; set; }
+
         public void Update(DateTime now)
         {
-            TimeLeft = DashboardViewModel.Countdown(SecondsLeft - (now - FetchedAt).TotalSeconds);
+            TimeLeft = IsPrivate ? "private" : DashboardViewModel.Countdown(SecondsLeft - (now - FetchedAt).TotalSeconds);
             foreach (var player in PlayerRows) player.Update(now);
         }
     }
@@ -592,8 +595,9 @@ namespace KsfCompanion.Ui
             var fresh = liveHeroMap == null || string.Equals(server.Map, liveHeroMap, StringComparison.OrdinalIgnoreCase);
             LiveTitle = server.Name;
             var players = Players(server, liveSteamId, fresh, everyoneShown.Contains("live"));
-            LiveSubtitle = fresh ? $"{server.Map}  ·  {players.Surfing} surfing" + (players.Spectating > 0 ? $"  ·  {players.Spectating} spectating" : "")
-                : $"{liveHeroMap}  ·  new map, updating...";
+            LiveSubtitle = !fresh ? $"{liveHeroMap}  ·  new map, updating..."
+                : !server.FromKsf ? $"{server.Map}  ·  {server.PlayerCount} playing  ·  private server"
+                : $"{server.Map}  ·  {players.Surfing} surfing" + (players.Spectating > 0 ? $"  ·  {players.Spectating} spectating" : "");
             foreach (var row in players.Rows) LivePlayers.Add(row);
             LiveMore = players.More;
             HasLiveMore = !string.IsNullOrEmpty(players.More);
@@ -637,7 +641,8 @@ namespace KsfCompanion.Ui
                 var row = new LivePlayerRow
                 {
                     Name = p.Name,
-                    Zone = spectating ? "SPEC" : !fresh ? "" : start ? "START" : bonus ? $"BONUS {zone - 30}" : (server.IsLinear ? "CP " : "STAGE ") + zone,
+                    // (A private server doesn't say where its players are.)
+                    Zone = spectating ? "SPEC" : !fresh || p.Zone == null ? "" : start ? "START" : bonus ? $"BONUS {zone - 30}" : (server.IsLinear ? "CP " : "STAGE ") + zone,
                     ZoneBrush = spectating ? SpecBrush : start ? StartBrush : bonus ? BonusBrush : ZoneBrush,
                     ZoneSoftBrush = spectating ? SpecSoftBrush : start ? StartSoftBrush : bonus ? BonusSoftBrush : ZoneSoftBrush,
                     Rank = p.Rank > 0 ? $"#{p.Rank:N0}" : "",
@@ -1631,7 +1636,7 @@ namespace KsfCompanion.Ui
             foreach (var e in items)
             {
                 var live = servers?.FirstOrDefault(s => string.Equals(s.Map, e.Map, StringComparison.OrdinalIgnoreCase));
-                var tier = e.Tier ?? live?.Tier;
+                var tier = e.Tier ?? (live?.Tier > 0 ? live.Tier : (int?)null);
                 Later.Add(new LaterRow
                 {
                     Map = e.Map,
@@ -1685,10 +1690,12 @@ namespace KsfCompanion.Ui
                     Name = s.Name,
                     Game = s.Game,
                     Map = s.Map,
-                    Tier = "T" + s.Tier,
+                    Tier = s.Tier > 0 ? "T" + s.Tier : "T?",
                     TierBrush = TierColor(s.Tier),
                     TierSoftBrush = TierSoft(s.Tier),
-                    Kind = KindOfMap(s.IsLinear, s.StageCount, s.BonusCount),
+                    // A private server's map is known once it's been looked up on ksf.surf.
+                    Kind = s.FromKsf || s.Tier > 0 ? KindOfMap(s.IsLinear, s.StageCount, s.BonusCount) : "private server",
+                    IsPrivate = !s.FromKsf,
                     Players = s.PlayerCount.ToString(Inv),
                     Address = s.Address,
                     IsYours = s.Address == yourServerAddress,
@@ -1702,7 +1709,8 @@ namespace KsfCompanion.Ui
                     var players = Players(s, YourSteamId, fresh: true, all: everyoneShown.Contains(s.Address));
                     foreach (var player in players.Rows) row.PlayerRows.Add(player);
                     row.PlayersMore = players.More;
-                    row.PlayersNote = s.Players.Count == 0 ? "nobody's on it right now" : "";
+                    // (A private server can keep who's on it to itself.)
+                    row.PlayersNote = s.Players.Count > 0 ? "" : s.PlayerCount > 0 ? "it doesn't say who's on it" : "nobody's on it right now";
                 }
                 ShowProgress(row);
                 row.Update(DateTime.Now);

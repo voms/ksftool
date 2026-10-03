@@ -43,6 +43,7 @@ namespace KsfCompanion
                 Section("times", () => Times());
                 Section("groups", () => Groups());
                 Section("leaving a server", () => Leaving());
+                Section("private servers", () => PrivateServers());
                 Section("game config", () => Config(root));
                 Section("rcon", () => Rcon(root));
                 Section("open files", () => Open(root));
@@ -244,6 +245,143 @@ namespace KsfCompanion
             check.Answered(At(200.4));
             var still = check.Tick(At(207));
             Check("answered: still on the server", !still.Ask && still.LeftAt == null && !check.Pending);
+        }
+
+        /// <summary>A private KSF server isn't on ksf.surf's list: it's asked itself (A2S), as a server browser does.</summary>
+        static void PrivateServers()
+        {
+            using var server = new FakeSourceServer();
+            var address = "127.0.0.1:" + server.Port;
+            var info = A2s.InfoAsync(address, TimeSpan.FromSeconds(3), CancellationToken.None).GetAwaiter().GetResult();
+            Check("its name, map and players, after the challenge it asks for", info?.Name == "Private" && info.Map == "surf_drift" && info.Players == 6
+                && info.Bots == 4 && info.MaxPlayers == 21, info == null ? "no answer" : $"{info.Name} {info.Map} {info.Players}/{info.MaxPlayers} {info.Bots} bots");
+            var players = A2s.PlayersAsync(address, TimeSpan.FromSeconds(3), CancellationToken.None).GetAwaiter().GetResult();
+            Check("who's on it, from an answer in two pieces", players?.Count == 6 && players[4].Name == "voms" && Math.Abs(players[4].Seconds - 2505.5) < 0.01
+                && players[1].Name == "WR | P1nkE ❤ˡᵒᵛᵉ ʸᵒ", players == null ? "no answer" : string.Join(", ", players.Select(p => p.Name)));
+            Check("its replay bots and SourceTV aren't players", players != null && players.Where(p => !A2s.LooksLikeBot(p.Name)).Select(p => p.Name).SequenceEqual(new[] { "voms", "ember" }));
+            Check("nor are KSF's other replay bots", A2s.LooksLikeBot("Map | levi") && A2s.LooksLikeBot("NOF | Map | SYNKI") && A2s.LooksLikeBot("WRB #3 | Nazar")
+                && !A2s.LooksLikeBot("KSF | someone") && !A2s.LooksLikeBot("Mapper"));
+            Check("one that doesn't answer", A2s.InfoAsync("127.0.0.1:9", TimeSpan.FromMilliseconds(600), CancellationToken.None).GetAwaiter().GetResult() == null);
+
+            // One that doesn't answer, while you're on it: as the game's own "status" showed it (your console log, October 2026).
+            var you = StatusAnswer.Player("#    136 \"voms\"              [U:1:6]       00:15       45    4 active");
+            var ember = StatusAnswer.Player("#     85 \"ember\"        [U:1:7]      3:53:52       96    0 active");
+            Check("status: its players", you?.Name == "voms" && you?.Account == 6 && you?.Connected == "00:15" && ember?.Connected == "3:53:52"
+                && StatusAnswer.Player("#    133 \"WR | P1nkE ❤ˡᵒᵛᵉ ʸᵒ\" BOT                       active") == null);
+            Check("status: how many", StatusAnswer.HumansIn("players : 1 humans, 4 bots (21 max)") == 1 && StatusAnswer.HumansIn("players : 41 humans, 4 bots (61 max)") == 41
+                && StatusAnswer.HumansIn("map     : surf_drift at: 0 x, 0 y, 0 z") == null);
+            Check("status: time on the server", StatusAnswer.Seconds("00:15") == 15 && StatusAnswer.Seconds("48:58") == 2938 && StatusAnswer.Seconds("3:53:52") == 14032
+                && StatusAnswer.Seconds("") == null && StatusAnswer.Seconds("1::2") == null);
+            var status = new StatusAnswer { Name = "Private", Address = "192.0.2.7:27068" };
+            status.Add("voms", SteamLocator.FromAccountId(6), "00:15");
+            status.Add("voms", SteamLocator.FromAccountId(6), "00:15");
+            var later = status.PlayersAt(status.At.AddMinutes(1));
+            Check("status: a player once, their time going on", later.Count == 1 && later[0].SteamId == "STEAM_0:0:3" && later[0].ConnectedSeconds == 75,
+                string.Join(", ", later.Select(p => $"{p.SteamId} {p.ConnectedSeconds}")));
+            var list = Companion.ParseKsfServers("192.0.2.7:27068 192.0.2.5:27015@100 nonsense 192.0.2.9");
+            Check("ksf_servers: 66 tick unless @100", list.Count == 2 && list["192.0.2.7:27068"] == "css" && list["192.0.2.5:27015"] == "css100t");
+
+            // In the list: no time left or stages from it (only ksf.surf has those), its map from KSF's map list.
+            var vm = new DashboardViewModel();
+            var row = new KsfServer { Game = "css", Name = "Private", Address = address, Map = "surf_drift", Tier = 5, IsLinear = false, StageCount = 3, PlayerCount = 2, FromKsf = false };
+            row.Players.Add(new KsfServerPlayer { Name = "voms", SteamId = "STEAM_0:0:3", ConnectedSeconds = 2505 });
+            row.Players.Add(new KsfServerPlayer { Name = "ember", ConnectedSeconds = 61 });
+            vm.YourSteamId = "STEAM_0:0:3";
+            vm.SetServers(new List<KsfServer> { row }, null, new HashSet<string>());
+            vm.ToggleServerCommand.Execute(address);
+            var shown = vm.Servers[0];
+            Check("a private server in the list", shown.TimeLeft == "private" && shown.Kind == "staged · 3 stages" && shown.Tier == "T5"
+                && shown.PlayerRows.Count == 2 && shown.PlayerRows.All(p => p.Zone == "") && shown.PlayerRows[0].IsYou, $"{shown.TimeLeft} / {shown.Kind} / {shown.PlayerRows.Count}");
+            vm.SetLiveServer(row, "STEAM_0:0:3", "surf_drift");
+            Check("and as your server", vm.LiveSubtitle == "surf_drift  ·  2 playing  ·  private server" && vm.LivePlayers.Count == 2, vm.LiveSubtitle);
+            // One that keeps who's on it to itself, on a map KSF's list doesn't have.
+            var quiet = new KsfServer { Game = "css", Name = "Quiet", Address = "192.0.2.8:27015", Map = "surf_unknown", PlayerCount = 3, FromKsf = false };
+            vm.SetServers(new List<KsfServer> { row, quiet }, null, new HashSet<string>());
+            vm.ToggleServerCommand.Execute(quiet.Address);
+            var quietRow = vm.Servers.First(r => r.Address == quiet.Address);
+            Check("a private server that doesn't say who's on it", quietRow.PlayersNote == "it doesn't say who's on it" && quietRow.Tier == "T?" && quietRow.Kind == "private server",
+                $"{quietRow.PlayersNote} / {quietRow.Tier} / {quietRow.Kind}");
+        }
+
+        /// <summary>A stand-in Source server answering A2S as servers do now: a challenge number first, a long answer in pieces.</summary>
+        sealed class FakeSourceServer : IDisposable
+        {
+            static readonly byte[] Challenge = { 0x12, 0x34, 0x56, 0x78 };
+            readonly UdpClient udp = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+
+            public FakeSourceServer() => _ = Task.Run(ServeAsync);
+            public int Port => ((IPEndPoint)udp.Client.LocalEndPoint).Port;
+            public void Dispose() => udp.Dispose();
+
+            async Task ServeAsync()
+            {
+                while (true)
+                {
+                    UdpReceiveResult query;
+                    try { query = await udp.ReceiveAsync(); }
+                    catch (Exception) { return; }
+                    var asked = query.Buffer;
+                    if (asked.Length < 9) continue;
+                    if (!asked.AsSpan(asked.Length - 4).SequenceEqual(Challenge))
+                        await udp.SendAsync(new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0x41 }.Concat(Challenge).ToArray(), 9, query.RemoteEndPoint);
+                    else if (asked[4] == 0x54)
+                    {
+                        var info = Info();
+                        await udp.SendAsync(info, info.Length, query.RemoteEndPoint);
+                    }
+                    else if (asked[4] == 0x55)
+                        // The second piece first: they're put back in order.
+                        foreach (var piece in Pieces(Players(), 2).Reverse())
+                            await udp.SendAsync(piece, piece.Length, query.RemoteEndPoint);
+                }
+            }
+
+            static byte[] Info()
+            {
+                var b = new List<byte> { 0xFF, 0xFF, 0xFF, 0xFF, 0x49, 17 };
+                void Text(string s)
+                {
+                    b.AddRange(Encoding.UTF8.GetBytes(s));
+                    b.Add(0);
+                }
+                Text("Private");
+                Text("surf_drift");
+                Text("cstrike");
+                Text("Counter-Strike: Source");
+                b.AddRange(BitConverter.GetBytes((short)240));
+                b.AddRange(new byte[] { 6, 21, 4, (byte)'d', (byte)'l', 0, 1 });
+                Text("11003710");
+                return b.ToArray();
+            }
+
+            static byte[] Players()
+            {
+                var b = new List<byte> { 0xFF, 0xFF, 0xFF, 0xFF, 0x44, 6 };
+                void Player(string name, int score, float seconds)
+                {
+                    b.Add(0);
+                    b.AddRange(Encoding.UTF8.GetBytes(name));
+                    b.Add(0);
+                    b.AddRange(BitConverter.GetBytes(score));
+                    b.AddRange(BitConverter.GetBytes(seconds));
+                }
+                Player("Kamikaze TV (Auto-Recording)", 0, 9000);
+                Player("WR | P1nkE ❤ˡᵒᵛᵉ ʸᵒ", 0, 9000);
+                Player("SurfTimer Replay", 0, 9000);
+                Player("SurfTimer Replay", 0, 9000);
+                Player("voms", 3, 2505.5f);
+                Player("ember", 0, 61);
+                return b.ToArray();
+            }
+
+            /// <summary>An answer in pieces: FE FF FF FF, an id, how many pieces, which one, the most a piece holds, the piece.</summary>
+            static IEnumerable<byte[]> Pieces(byte[] whole, int count)
+            {
+                var size = (whole.Length + count - 1) / count;
+                for (var i = 0; i < count; i++)
+                    yield return new byte[] { 0xFE, 0xFF, 0xFF, 0xFF }.Concat(BitConverter.GetBytes(77)).Concat(new[] { (byte)count, (byte)i })
+                        .Concat(BitConverter.GetBytes((short)1248)).Concat(whole.Skip(i * size).Take(size)).ToArray();
+            }
         }
 
         static void Config(string root)
