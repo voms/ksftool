@@ -14,6 +14,7 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.LogicalTree;
 using KsfCompanion.Ui;
+using SkiaSharp;
 
 namespace KsfCompanion
 {
@@ -609,6 +610,17 @@ namespace KsfCompanion
             var picture = Path.Combine(root, "picture.jpg");
             ImageCache.Store(Png(40, 30), picture);
             Check("a picture is kept", File.Exists(picture));
+            // A map's picture on ksf.surf: a jpeg, 1920 wide or so.
+            var mapPicture = Path.Combine(root, "map.jpg");
+            using (var bitmap = new SKBitmap(1920, 1080))
+            {
+                bitmap.Erase(new SKColor(40, 120, 200));
+                using var image = SKImage.FromBitmap(bitmap);
+                using var jpeg = image.Encode(SKEncodedImageFormat.Jpeg, 85);
+                ImageCache.Store(jpeg.ToArray(), mapPicture);
+            }
+            using (var stored = SKBitmap.Decode(mapPicture))
+                Check("a map's picture is kept, 1600 wide", stored?.Width == 1600 && stored.Height == 900, stored == null ? "none" : $"{stored.Width}x{stored.Height}");
             var bomb = Path.Combine(root, "bomb.jpg");
             var refused = false;
             try { ImageCache.Store(Png(10000, 10000), bomb); }
