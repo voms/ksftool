@@ -1,7 +1,7 @@
 # A NixOS desktop (Xfce) that logs in by itself: KSF Companion installed by the NixOS module and started by the Home
 # Manager service, Steam's files for one account, and a stand-in for CS:S started with -usercon. Checks that it starts
-# with the session, puts its icon in the tray, takes the game's console, and opens its dashboard when it's started
-# again. Part of `nix flake check` (it needs KVM).
+# with the session, puts its icon in the tray, takes the game's console, and opens its dashboard - showing the game's
+# map - when it's started again. Part of `nix flake check` (it needs KVM).
 { self }:
 let
   # Home Manager, for its NixOS module (only this test uses it).
@@ -14,6 +14,8 @@ let
 in
 {
   name = "ksf-companion-desktop";
+  # To read the dashboard off the screen.
+  enableOCR = true;
 
   nodes.machine =
     { pkgs, ... }:
@@ -135,7 +137,8 @@ in
         machine.fail(visible)
         machine.succeed(as_alice("ksf-companion"))
         machine.wait_until_succeeds(visible)
-        machine.sleep(3)
+        # Drawn, and on the map the game is on (from its console log).
+        machine.wait_for_text("utopia")
         machine.screenshot("dashboard")
 
     with subtest("no errors"):
