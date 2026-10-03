@@ -879,7 +879,7 @@ namespace KsfCompanion
                     {
                         sessionPbs++;
                         var beatWr = report.Wr != null && time < report.Wr.Time;
-                        var detail = previous == null ? Format.Time(time) : $"{Format.Time(time)}   {Format.Diff(time - previous.Value)}";
+                        var detail = previous == null ? Format.Time(time) : $"{Format.Time(time)}   {Format.Gap(time, previous.Value)}";
                         if (points > 0) detail += $"   +{points} pts";
                         var title = beatWr ? "WORLD RECORD" : previous == null ? "FIRST FINISH" : "NEW PERSONAL BEST";
                         Program.Trace($"celebrate: {title} / {detail}");
@@ -1355,8 +1355,8 @@ namespace KsfCompanion
             if (zone == 0) return; // the map itself gets the big PB banner instead
             var name = MapReport.ZoneName(zone);
             vm.Toast = best == null ? $"{name} done  {Format.Short(time)}"
-                : improved ? $"{name} new best  {Format.Short(time)}  ({Format.Diff(time - best.Value)})"
-                : $"{name}  {Format.Short(time)}   best {Format.Short(best.Value)}  ({Format.Diff(time - best.Value)})";
+                : improved ? $"{name} new best  {Format.Short(time)}  ({Format.Gap(time, best.Value)})"
+                : $"{name}  {Format.Short(time)}   best {Format.Short(best.Value)}  ({Format.Gap(time, best.Value)})";
         }
 
         /// <summary>Puts the times (and finishes) you set in game into a report from ksf.surf that doesn't have them yet. True if it changed.</summary>
@@ -1820,7 +1820,7 @@ namespace KsfCompanion
             vm.FlashZones(better.Select(b => b.Zone).ToList());
             var one = better[0];
             vm.Toast = better.Count > 1 ? "New bests on " + string.Join(", ", better.Select(b => MapReport.ZoneLabel(b.Zone)))
-                : one.Old is double was ? $"{MapReport.ZoneName(one.Zone)} new best  {Format.Short(one.Time)}  ({Format.Diff(one.Time - was)})"
+                : one.Old is double was ? $"{MapReport.ZoneName(one.Zone)} new best  {Format.Short(one.Time)}  ({Format.Gap(one.Time, was)})"
                 : $"{MapReport.ZoneName(one.Zone)} done  {Format.Short(one.Time)}";
         }
 

@@ -40,6 +40,7 @@ namespace KsfCompanion
                 Section("vdf", () => Vdf_());
                 Section("steam", () => Steam(root));
                 Section("json", () => Json_());
+                Section("times", () => Times());
                 Section("game config", () => Config(root));
                 Section("rcon", () => Rcon(root));
                 Section("open files", () => Open(root));
@@ -135,6 +136,16 @@ namespace KsfCompanion
             try { Json.Parse("<html>busy</html>"); }
             catch (ArgumentException) { refused = true; }
             Check("an error page counts as a failed request", refused);
+        }
+
+        static void Times()
+        {
+            Check("cut off like the game's timer, never rounded up", Format.Short(10.199954) == "10.199" && Format.Time(35.624759) == "0:35.624");
+            Check("a time that already is whole milliseconds stays as it is", Format.Short(10.199) == "10.199" && Format.Short(0.3) == "0.300");
+            Check("minutes and hours when needed", Format.Short(62.0009) == "1:02.000" && Format.Time(3723.4569) == "1:02:03.456");
+            Check("a gap is between the times as they're shown", Format.Gap(10.26002, 10.199954) == "+0.061" && Format.Gap(10.199954, 10.26002) == "-0.061");
+            Check("and gets minutes when it's long", Format.Gap(100.5, 35) == "+1:05.500");
+            Check("times add up as they're shown", Format.Time(Format.Sum(new[] { 10.1999, 20.5009 })) == "0:30.699");
         }
 
         static void Config(string root)

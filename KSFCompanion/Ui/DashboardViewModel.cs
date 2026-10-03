@@ -337,8 +337,8 @@ namespace KsfCompanion.Ui
                 StagesSummary = $"{stagesDone} of {stageRows.Count} done";
             else
             {
-                StagesSummary = "sum of best " + Format.Time(stageRows.Sum(x => r.Zone(x.Zone).Time.Value));
-                if (stageRows.All(x => r.ZoneWrs.ContainsKey(x.Zone))) StagesSummary += "  ·  records " + Format.Time(stageRows.Sum(x => r.ZoneWrs[x.Zone].Time));
+                StagesSummary = "sum of best " + Format.Time(Format.Sum(stageRows.Select(x => r.Zone(x.Zone).Time.Value)));
+                if (stageRows.All(x => r.ZoneWrs.ContainsKey(x.Zone))) StagesSummary += "  ·  records " + Format.Time(Format.Sum(stageRows.Select(x => r.ZoneWrs[x.Zone].Time)));
             }
             BonusesSummary = $"{bonusRows.Count(x => x.Done)} of {bonusRows.Count} done";
         }
@@ -365,8 +365,8 @@ namespace KsfCompanion.Ui
             {
                 row.Done = true;
                 row.Time = Show(time);
-                var yours = wr != null && (string.Equals(wr.SteamId, r.SteamId, StringComparison.OrdinalIgnoreCase) || time <= wr.Time + 0.0005);
-                row.Gap = wr == null ? "" : yours ? "WR" : Format.Diff(time - wr.Time);
+                var yours = wr != null && (string.Equals(wr.SteamId, r.SteamId, StringComparison.OrdinalIgnoreCase) || Format.Millis(time) <= Format.Millis(wr.Time));
+                row.Gap = wr == null ? "" : yours ? "WR" : Format.Gap(time, wr.Time);
                 row.GapBrush = yours ? Gold : GapBrushNormal;
                 // The bar (it fills smoothly): how close to the record - full at record pace, empty at twice its time.
                 row.Closeness = wr == null ? 0 : yours ? 1 : Math.Max(0.02, Math.Min(1, (wr.Time / time - 0.5) / 0.5));
@@ -849,7 +849,7 @@ namespace KsfCompanion.Ui
             PbTop = "just now";
             if (wr != null)
             {
-                GapTime = Format.Diff(time - wr.Time);
+                GapTime = Format.Gap(time, wr.Time);
                 GapDetail = string.Format(Inv, "{0:0.0}% slower than the WR", (time / wr.Time - 1) * 100);
             }
         }
@@ -894,7 +894,7 @@ namespace KsfCompanion.Ui
                 PbTop = "just now";
                 if (r.Wr != null)
                 {
-                    GapTime = Format.Diff(newPb - r.Wr.Time);
+                    GapTime = Format.Gap(newPb, r.Wr.Time);
                     GapDetail = string.Format(Inv, "{0:0.0}% slower than the WR", (newPb / r.Wr.Time - 1) * 100);
                 }
             }
@@ -908,7 +908,7 @@ namespace KsfCompanion.Ui
                 if (r.Wr != null)
                 {
                     var mine = string.Equals(r.Wr.SteamId, r.SteamId, StringComparison.OrdinalIgnoreCase);
-                    GapTime = mine ? "WR" : Format.Diff(pb - r.Wr.Time);
+                    GapTime = mine ? "WR" : Format.Gap(pb, r.Wr.Time);
                     GapDetail = mine ? "you hold the world record" : string.Format(Inv, "{0:0.0}% slower than the WR", (pb / r.Wr.Time - 1) * 100);
                 }
                 GroupText = me.Group > 0 ? "GROUP " + me.Group : "";
@@ -1351,7 +1351,7 @@ namespace KsfCompanion.Ui
                     RankBrush = row.Rank == 1 ? Gold : row.Rank == 2 ? Silver : row.Rank == 3 ? Bronze : Plain,
                     Name = row.Name,
                     Time = Show(row.Time),
-                    Gap = row.Rank == 1 || wr == null ? "" : Format.Diff(row.Time - wr.Time),
+                    Gap = row.Rank == 1 || wr == null ? "" : Format.Gap(row.Time, wr.Time),
                     IsYou = string.Equals(row.SteamId, r.SteamId, StringComparison.OrdinalIgnoreCase),
                 });
             }
@@ -1366,7 +1366,7 @@ namespace KsfCompanion.Ui
                     RankBrush = Plain,
                     Name = r.PlayerName ?? "you",
                     Time = Show(myTime),
-                    Gap = wr != null ? Format.Diff(myTime - wr.Time) : "",
+                    Gap = wr != null ? Format.Gap(myTime, wr.Time) : "",
                     IsYou = true,
                 });
             }

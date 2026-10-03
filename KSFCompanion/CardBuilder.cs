@@ -57,7 +57,7 @@ namespace KsfCompanion
                 if (r.Wr != null)
                     bits.Add(string.Equals(r.Wr.SteamId, r.SteamId, StringComparison.OrdinalIgnoreCase)
                         ? "that's the WR!"
-                        : Format.Diff(time - r.Wr.Time) + " behind WR");
+                        : Format.Gap(time, r.Wr.Time) + " behind WR");
                 lines.Add(string.Join("   ", bits));
             }
             else
@@ -114,7 +114,7 @@ namespace KsfCompanion
         {
             const int perLine = 4;
             var parts = new List<string>();
-            double sum = 0;
+            var times = new List<double>();
             var allDone = true;
             foreach (var zone in zones)
             {
@@ -122,8 +122,8 @@ namespace KsfCompanion
                 var mine = r.Zone(zone);
                 if (mine?.Time is double time)
                 {
-                    sum += time;
-                    var gap = wr == null ? "" : time <= wr.Time + 0.0005 ? " WR" : " " + Format.Diff(time - wr.Time);
+                    times.Add(time);
+                    var gap = wr == null ? "" : Format.Millis(time) <= Format.Millis(wr.Time) ? " WR" : " " + Format.Gap(time, wr.Time);
                     var rank = mine.Unsynced ? " (new)" : mine.Rank > 0 && mine.TotalRanks > 0 ? $" #{mine.Rank}/{mine.TotalRanks}" : "";
                     parts.Add($"{MapReport.ZoneLabel(zone)} {Format.Short(time)}{gap}{rank}");
                 }
@@ -136,7 +136,7 @@ namespace KsfCompanion
             var head = title.PadRight(9);
             for (var i = 0; i < parts.Count; i += perLine)
                 yield return (i == 0 ? head : new string(' ', head.Length)) + string.Join("     ", parts.Skip(i).Take(perLine));
-            if (allDone && zones.Count > 1 && !MapReport.IsBonus(zones[0])) yield return new string(' ', head.Length) + "sum of your best stages " + Format.Time(sum);
+            if (allDone && zones.Count > 1 && !MapReport.IsBonus(zones[0])) yield return new string(' ', head.Length) + "sum of your best stages " + Format.Time(Format.Sum(times));
         }
 
         static string Hint(bool saved, KeyNames keys) => saved
@@ -148,23 +148,40 @@ namespace KsfCompanion
 
     static class Format
     {
-        public static string Time(double seconds)
-        {
-            var t = TimeSpan.FromSeconds(seconds);
-            return t.TotalHours >= 1
-                ? string.Format(CultureInfo.InvariantCulture, "{0}:{1:00}:{2:00}.{3:000}", (int)t.TotalHours, t.Minutes, t.Seconds, t.Milliseconds)
-                : string.Format(CultureInfo.InvariantCulture, "{0}:{1:00}.{2:000}", t.Minutes, t.Seconds, t.Milliseconds);
-        }
+        /// <summary>
+        /// A time in whole milliseconds, cut off the way the game's timer does it: KSF's 10.199954 is 10.199, never 10.200.
+        /// (The millionth of a millisecond keeps a time that already is whole milliseconds, like the game's own 10.199,
+        /// from slipping to the one before.)
+        /// </summary>
+        public static long Millis(double seconds) => (long)Math.Floor(seconds * 1000 + 1e-6);
+
+        public static string Time(double seconds) => Clock(Millis(seconds));
 
         /// <summary>For stage-length times: "4.167", "35.430", and minutes only when needed ("1:02.345").</summary>
-        public static string Short(double seconds) =>
-            seconds < 59.9995 ? seconds.ToString("0.000", CultureInfo.InvariantCulture) : Time(seconds);
+        public static string Short(double seconds) => Short(Millis(seconds));
 
-        public static string Diff(double seconds)
+        /// <summary>
+        /// How far <paramref name="time"/> is from <paramref name="other"/>, as the two are shown ("+0.061", "-1.204",
+        /// "+1:02.345"), so the numbers on screen always add up.
+        /// </summary>
+        public static string Gap(double time, double other)
         {
-            var sign = seconds < 0 ? "-" : "+";
-            var abs = Math.Abs(seconds);
-            return sign + (abs >= 60 ? Time(abs) : abs.ToString("0.000", CultureInfo.InvariantCulture));
+            var ms = Millis(time) - Millis(other);
+            return (ms < 0 ? "-" : "+") + Short(Math.Abs(ms));
+        }
+
+        /// <summary>Times added up as they're shown (each one cut to the millisecond first).</summary>
+        public static double Sum(IEnumerable<double> times) => times.Sum(Millis) / 1000.0;
+
+        static string Short(long ms) =>
+            ms < 60_000 ? string.Format(CultureInfo.InvariantCulture, "{0}.{1:000}", ms / 1000, ms % 1000) : Clock(ms);
+
+        static string Clock(long ms)
+        {
+            long hours = ms / 3_600_000, minutes = ms / 60_000 % 60, seconds = ms / 1000 % 60, fraction = ms % 1000;
+            return hours > 0
+                ? string.Format(CultureInfo.InvariantCulture, "{0}:{1:00}:{2:00}.{3:000}", hours, minutes, seconds, fraction)
+                : string.Format(CultureInfo.InvariantCulture, "{0}:{1:00}.{2:000}", minutes, seconds, fraction);
         }
 
         public static string Duration(double seconds)
