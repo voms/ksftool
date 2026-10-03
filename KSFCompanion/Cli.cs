@@ -179,8 +179,9 @@ namespace KsfCompanion
                 output.WriteLine("it doesn't say who's on it");
                 return 0;
             }
-            foreach (var p in players.OrderBy(p => A2s.LooksLikeBot(p.Name)).ThenByDescending(p => p.Seconds))
-                output.WriteLine($"  {(A2s.LooksLikeBot(p.Name) ? "bot" : "   ")}  {Format.Duration(p.Seconds),9}  {p.Name}");
+            var people = A2s.People(info, players);
+            foreach (var p in players.OrderBy(p => !people.Contains(p)).ThenByDescending(p => p.Seconds))
+                output.WriteLine($"  {(people.Contains(p) ? "   " : "bot")}  {Format.Duration(p.Seconds),9}  {p.Name}");
             return 0;
         }
 

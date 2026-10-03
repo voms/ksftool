@@ -260,7 +260,23 @@ namespace KsfCompanion
                 && players[1].Name == "WR | P1nkE ❤ˡᵒᵛᵉ ʸᵒ", players == null ? "no answer" : string.Join(", ", players.Select(p => p.Name)));
             Check("its replay bots and SourceTV aren't players", players != null && players.Where(p => !A2s.LooksLikeBot(p.Name)).Select(p => p.Name).SequenceEqual(new[] { "voms", "ember" }));
             Check("nor are KSF's other replay bots", A2s.LooksLikeBot("Map | levi") && A2s.LooksLikeBot("NOF | Map | SYNKI") && A2s.LooksLikeBot("WRB #3 | Nazar")
-                && !A2s.LooksLikeBot("KSF | someone") && !A2s.LooksLikeBot("Mapper"));
+                && A2s.LooksLikeBot("2X | WR | Caff") && !A2s.LooksLikeBot("KSF | someone") && !A2s.LooksLikeBot("Mapper"));
+            // A bot by a name that doesn't give it away: it joined with the others, and the server counts one person fewer.
+            var people = A2s.People(new A2sInfo { Players = 6, Bots = 3 }, new[]
+            {
+                new A2sPlayer { Name = "WR | x", Seconds = 9000 }, new A2sPlayer { Name = "SurfTimer Replay", Seconds = 9000 },
+                new A2sPlayer { Name = "Caff's run", Seconds = 9000.4 }, new A2sPlayer { Name = "voms", Seconds = 2505 },
+                new A2sPlayer { Name = "ember", Seconds = 61 }, new A2sPlayer { Name = "kite", Seconds = 9001 },
+            });
+            Check("and one by another name, by when it joined", people.Select(p => p.Name).SequenceEqual(new[] { "voms", "ember", "kite" }), string.Join(", ", people.Select(p => p.Name)));
+            // A long name cut off at 32 bytes in the middle of a letter.
+            var cut = new List<byte> { 0x44, 1, 0 };
+            cut.AddRange(Encoding.UTF8.GetBytes("Пара"));
+            cut.RemoveAt(cut.Count - 1);
+            cut.Add(0);
+            cut.AddRange(BitConverter.GetBytes(0));
+            cut.AddRange(BitConverter.GetBytes(12f));
+            Check("a name cut off mid-letter loses the broken bit", A2s.ParsePlayers(cut.ToArray())?.SingleOrDefault()?.Name == "Пар");
             Check("one that doesn't answer", A2s.InfoAsync("127.0.0.1:9", TimeSpan.FromMilliseconds(600), CancellationToken.None).GetAwaiter().GetResult() == null);
 
             // One that doesn't answer, while you're on it: as the game's own "status" showed it (your console log, October 2026).

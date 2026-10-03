@@ -2294,13 +2294,8 @@ namespace KsfCompanion
                 }
                 var server = PrivateServer(answer.Address, answer.Game, answer.Info.Name, answer.Info.Map, answer.Info.Players - answer.Info.Bots);
                 if (answer.Players != null)
-                {
-                    foreach (var p in answer.Players)
-                    {
-                        if (string.IsNullOrWhiteSpace(p.Name) || A2s.LooksLikeBot(p.Name)) continue;
+                    foreach (var p in A2s.People(answer.Info, answer.Players))
                         server.Players.Add(new KsfServerPlayer { Name = p.Name, SteamId = IsMe(p.Name) ? steamId : null, ConnectedSeconds = (int)p.Seconds });
-                    }
-                }
                 // It doesn't say who's on it: as "status" showed them, while you're there.
                 else if (status != null) server.Players.AddRange(status.PlayersAt(now));
                 privateServers[answer.Address] = server;

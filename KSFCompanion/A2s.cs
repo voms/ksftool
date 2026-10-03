@@ -57,11 +57,26 @@ namespace KsfCompanion
         }
 
         /// <summary>
-        /// SurfTimer's replay bots ("WR | name", "WRB #2 | name", "Map | name", "NOF | Map | name", "SurfTimer Replay"),
-        /// SourceTV and the like, which a server lists among its players.
+        /// SurfTimer's replay bots ("WR | name", "WRB #2 | name", "2X | WR | name", "Map | name", "NOF | Map | name",
+        /// "SurfTimer Replay"), SourceTV and the like, which a server lists among its players.
         /// </summary>
         public static bool LooksLikeBot(string name) => BotName.IsMatch(name ?? "");
-        static readonly Regex BotName = new Regex(@"^(?:WR(?:B|CP|S)?|PR|TOP|NOF|Map)\s*(?:#\d+)?\s*\||SurfTimer Replay|SourceTV|\(Auto-Recording\)|^BOT\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        static readonly Regex BotName = new Regex(@"^(?:[^|]{1,8}\|\s*)?(?:WR(?:B|CP|S)?|PR|TOP|NOF|Map)\s*(?:#\d+)?\s*\||SurfTimer Replay|SourceTV|\(Auto-Recording\)|^BOT\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>
+        /// The people among a server's players: not its bots. A bot whose name doesn't give it away is told by when it
+        /// joined - with the others, as the server started - while the list has more people than the server counts.
+        /// </summary>
+        public static List<A2sPlayer> People(A2sInfo info, IEnumerable<A2sPlayer> players)
+        {
+            var all = players.Where(p => !string.IsNullOrWhiteSpace(p.Name)).ToList();
+            var botsJoined = all.Where(p => LooksLikeBot(p.Name)).Select(p => p.Seconds).ToList();
+            var people = all.Where(p => !LooksLikeBot(p.Name)).ToList();
+            var count = Math.Max(0, info.Players - info.Bots);
+            while (people.Count > count && people.FirstOrDefault(p => botsJoined.Any(joined => Math.Abs(joined - p.Seconds) < 2)) is A2sPlayer bot)
+                people.Remove(bot);
+            return people;
+        }
 
         static byte[] Packet(byte kind, byte[] body) => NoChallenge.Append(kind).Concat(body).ToArray();
 
@@ -174,7 +189,8 @@ namespace KsfCompanion
             {
                 var end = Array.IndexOf(data, (byte)0, at);
                 if (end < 0) throw new IndexOutOfRangeException();
-                var text = Encoding.UTF8.GetString(data, at, end - at);
+                // A long name is cut off at 32 bytes, sometimes in the middle of a letter: that bit goes.
+                var text = Encoding.UTF8.GetString(data, at, end - at).TrimEnd('\uFFFD');
                 at = end + 1;
                 return text;
             }
