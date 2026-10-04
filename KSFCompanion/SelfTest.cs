@@ -398,8 +398,8 @@ namespace KsfCompanion
             Check("another order starts the right way round", !page.SortReversed && Order() == "anoobis yolo andromeda ambient_njv chasm" && page.SortDirection == "Best first",
                 $"{Order()} / {page.SortDirection}");
             page.SetSortCommand.Execute("rank");
-            Check("picked again, it turns round", page.SortReversed && Order() == "andromeda yolo anoobis ambient_njv chasm" && page.SortDirection == "Worst first",
-                $"{Order()} / {page.SortDirection}");
+            Check("picked again, it turns round (a place not read yet still after the rest)", page.SortReversed && Order() == "yolo anoobis andromeda ambient_njv chasm"
+                && page.SortDirection == "Worst first", $"{Order()} / {page.SortDirection}");
             page.SetSortCommand.Execute("wrdiff");
             page.FlipSortCommand.Execute(null);
             Check("the furthest from the record first", Order() == "yolo andromeda anoobis ambient_njv chasm" && page.SortDirection == "Furthest first", Order());
@@ -424,7 +424,10 @@ namespace KsfCompanion
             ranks.SetRecords(placed, "you  ·  66T", null, loading: false);
             ranks.Sort = "rank";
             string Ranked() => string.Join(" ", ranks.Rows.Select(r => r.Map.Substring(5)));
-            Check("by rank: the top 10, then each group by place (a place not read yet at the end of its group)", Ranked() == "d c b e a", Ranked());
+            Check("by rank: by the number (places not read yet after the rest)", Ranked() == "d c e b a", Ranked());
+            ranks.Sort = "group";
+            Check("by group: the top 10, then each group by place (a place not read yet at the end of its group)", Ranked() == "d c b e a", Ranked());
+            ranks.Sort = "rank";
             RecordRow RowOf(string map) => ranks.Rows.First(r => r.Map == map);
             var c = RowOf("surf_c");
             var b = RowOf("surf_b");
@@ -432,14 +435,36 @@ namespace KsfCompanion
                 && RowOf("surf_e").Rank == "#1,523" && RowOf("surf_e").RankGroup == " · G2", $"{c.Rank}{c.RankGroup} / {c.RankTip} / {RowOf("surf_e").Rank}");
             Check("just the group until the place is read", b.Rank == "G1" && b.RankGroup == "" && b.RankTip == "Group 1", $"{b.Rank}{b.RankGroup} / {b.RankTip}");
             Check("the top 10 as before", RowOf("surf_d").Rank == "#7" && RowOf("surf_d").RankGroup == "", RowOf("surf_d").Rank);
+            Check("the list: the place and the group in columns of their own", c.PlaceText == "#40" && c.GroupText == "G1" && b.PlaceText == "" && b.GroupText == "G1"
+                && RowOf("surf_d").PlaceText == "#7" && !RowOf("surf_d").HasGroup && RowOf("surf_e").PlaceText == "#1,523",
+                $"{c.PlaceText}|{c.GroupText} {b.PlaceText}|{b.GroupText} {RowOf("surf_d").PlaceText}|{RowOf("surf_d").GroupText}");
             placed[1].Place = 35;
             placed[1].Players = 2770;
             ranks.PlaceRead(placed[1]);
-            Check("a place read shows on its row at once", b.Rank == "#35" && b.RankGroup == " · G1" && b.HasRank, $"{b.Rank}{b.RankGroup}");
+            Check("a place read shows on its row at once", b.Rank == "#35" && b.RankGroup == " · G1" && b.HasRank && b.PlaceText == "#35", $"{b.Rank}{b.RankGroup}");
             ranks.Refilter();
             Check("and takes its place in the order", Ranked() == "d b c e a", Ranked());
             ranks.SortReversed = true;
-            Check("the worst first", Ranked() == "a e c b d", Ranked());
+            Check("the worst rank first", Ranked() == "e c b d a", Ranked());
+            ranks.SetSortCommand.Execute("group");
+            ranks.FlipSortCommand.Execute(null);
+            Check("the worst group first", Ranked() == "e a c b d" && ranks.SortDirection == "Worst first", Ranked());
+
+            // A group is a run of places on one map: a G4 on a map few have finished can be a better place than a G3.
+            var maps = new RecordsViewModel(new MapThumbs());
+            maps.SetRecords(new List<MapRecord>
+            {
+                new MapRecord { Map = "surf_big", Time = 10, Group = 3, Place = 246, Points = 80 },
+                new MapRecord { Map = "surf_small", Time = 10, Group = 4, Place = 65, Points = 42 },
+                new MapRecord { Map = "surf_top", Time = 10, Rank = 3, Points = 1580 },
+            }, "you", null, loading: false);
+            string Mixed() => string.Join(" ", maps.Rows.Select(r => r.Map.Substring(5)));
+            maps.Sort = "rank";
+            var byRank = Mixed();
+            maps.Sort = "group";
+            Check("rank is the number, group the group: #65 (G4) before #246 (G3), and the other way round", byRank == "top small big" && Mixed() == "top big small", $"{byRank} / {Mixed()}");
+            ranks.SortReversed = false;
+            ranks.Sort = "rank";
             ranks.PlaceProgress = "reading your ranks: 1 of 2";
             Check("while they're read, the top says so", ranks.Status.EndsWith("  ·  reading your ranks: 1 of 2", StringComparison.Ordinal), ranks.Status);
 

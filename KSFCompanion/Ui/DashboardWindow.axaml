@@ -287,7 +287,7 @@
             <Panel Classes="mapRow" Margin="0,0,0,3" Background="Transparent">
                 <Border Classes="hover" CornerRadius="9" Background="#0CFFFFFF" />
                 <Border Classes="row" Classes.here="{Binding IsCurrent}" />
-                <Grid Margin="7,6" ColumnDefinitions="Auto,*,46,94,84,100,66,58,104,150,64">
+                <Grid Margin="7,6" ColumnDefinitions="Auto,*,46,94,84,74,72,66,58,104,150,64">
                     <Panel Width="{Binding $parent[Window].DataContext.ListThumbWidth}" Height="{Binding $parent[Window].DataContext.ListThumbHeight}">
                         <Border CornerRadius="7" Background="{StaticResource Bg3Brush}" />
                         <Border CornerRadius="7" Opacity="{Binding ThumbOpacity}">
@@ -310,18 +310,20 @@
                     <TextBlock Grid.Column="3" Classes="numbers" Text="{Binding Time}" FontSize="13" VerticalAlignment="Center" />
                     <TextBlock Grid.Column="3" Classes="muted" Text="not done" FontSize="12" VerticalAlignment="Center" IsVisible="{Binding !IsDone}" />
                     <TextBlock Grid.Column="4" Classes="numbers" Text="{Binding WrDiff}" Foreground="{StaticResource Text1Brush}" FontSize="12.5" VerticalAlignment="Center" />
-                    <Border Grid.Column="5" CornerRadius="5" Padding="6,1" Background="{Binding RankSoftBrush}" HorizontalAlignment="Left" VerticalAlignment="Center"
-                            IsVisible="{Binding HasRank}" ToolTip.Tip="{Binding RankTip}">
-                        <TextBlock FontSize="11.5" FontWeight="Bold" FontFamily="{StaticResource DisplayFont}"><Run Text="{Binding Rank}" Foreground="{Binding RankBrush}" /><Run Text="{Binding RankGroup}" Foreground="{StaticResource Text1Brush}" FontWeight="SemiBold" /></TextBlock>
+                    <TextBlock Grid.Column="5" Classes="numbers" Text="{Binding PlaceText}" Foreground="{Binding PlaceBrush}" FontSize="13" FontWeight="SemiBold"
+                               Background="Transparent" ToolTip.Tip="{Binding RankTip}" HorizontalAlignment="Left" />
+                    <Border Grid.Column="6" CornerRadius="5" Padding="6,1" Background="#223DDC97" HorizontalAlignment="Left" VerticalAlignment="Center"
+                            IsVisible="{Binding HasGroup}" ToolTip.Tip="{Binding RankTip}">
+                        <TextBlock Text="{Binding GroupText}" Foreground="#3DDC97" FontSize="11.5" FontWeight="Bold" FontFamily="{StaticResource DisplayFont}" />
                     </Border>
-                    <TextBlock Grid.Column="6" Classes="numbers" Text="{Binding Points}" FontSize="12.5" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="7" Classes="numbers" Text="{Binding Completions}" Foreground="{StaticResource Text1Brush}" FontSize="12.5" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="8" Text="{Binding Date}" Foreground="{StaticResource Text1Brush}" FontSize="12" VerticalAlignment="Center" />
-                    <StackPanel Grid.Column="9" VerticalAlignment="Center" Margin="0,0,12,0" Background="Transparent" ToolTip.Tip="{Binding ZonesTip}" ToolTip.ShowDelay="300">
+                    <TextBlock Grid.Column="7" Classes="numbers" Text="{Binding Points}" FontSize="12.5" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="8" Classes="numbers" Text="{Binding Completions}" Foreground="{StaticResource Text1Brush}" FontSize="12.5" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="9" Text="{Binding Date}" Foreground="{StaticResource Text1Brush}" FontSize="12" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="10" VerticalAlignment="Center" Margin="0,0,12,0" Background="Transparent" ToolTip.Tip="{Binding ZonesTip}" ToolTip.ShowDelay="300">
                         <ui:ZoneBar Pattern="{Binding StagePattern}" Height="5" />
                         <ui:ZoneBar Pattern="{Binding BonusPattern}" Height="5" Margin="0,3,0,0" />
                     </StackPanel>
-                    <StackPanel Grid.Column="10" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
+                    <StackPanel Grid.Column="11" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
                         <Button Theme="{StaticResource IconButton}" ToolTip.Tip="{Binding SaveTip}"
                                 Command="{Binding $parent[Window].DataContext.ToggleSavedCommand}" CommandParameter="{Binding Map}">
                             <ui:Icon Data="{StaticResource IconStar}" Width="13" Height="13" Classes.saved="{Binding IsSaved}" />
@@ -961,6 +963,7 @@
                                             <StackPanel Orientation="Horizontal">
                                                 <Button Theme="{StaticResource SegmentButton}" Content="Points" Command="{Binding SetSortCommand}" CommandParameter="points" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=points}" />
                                                 <Button Theme="{StaticResource SegmentButton}" Content="Rank" Command="{Binding SetSortCommand}" CommandParameter="rank" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=rank}" />
+                                                <Button Theme="{StaticResource SegmentButton}" Content="Group" Command="{Binding SetSortCommand}" CommandParameter="group" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=group}" />
                                                 <Button Theme="{StaticResource SegmentButton}" Content="Time" Command="{Binding SetSortCommand}" CommandParameter="time" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=time}" />
                                                 <Button Theme="{StaticResource SegmentButton}" Content="WR diff" Command="{Binding SetSortCommand}" CommandParameter="wrdiff" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=wrdiff}" />
                                                 <Button Theme="{StaticResource SegmentButton}" Content="Completions" Command="{Binding SetSortCommand}" CommandParameter="completions" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=completions}" />
@@ -1000,7 +1003,7 @@
                             <Border Classes="card" Padding="10" IsVisible="{Binding IsListView}">
                                 <StackPanel>
                                     <!-- ksf.surf's columns: click one to sort by it. -->
-                                    <Grid Margin="7,2,7,8" ColumnDefinitions="Auto,*,46,94,84,100,66,58,104,150,64" IsVisible="{Binding HasRows}">
+                                    <Grid Margin="7,2,7,8" ColumnDefinitions="Auto,*,46,94,84,74,72,66,58,104,150,64" IsVisible="{Binding HasRows}">
                                         <Panel Width="{Binding $parent[Window].DataContext.ListThumbWidth}" />
                                     <Button Grid.Column="1" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=name}"
                                             Command="{Binding SetSortCommand}" CommandParameter="name" HorizontalAlignment="Left" Margin="12,0,0,0">
@@ -1042,7 +1045,15 @@
                                                      IsVisible="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=rank}" />
                                         </StackPanel>
                                     </Button>
-                                    <Button Grid.Column="6" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=points}"
+                                    <Button Grid.Column="6" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=group}"
+                                            Command="{Binding SetSortCommand}" CommandParameter="group" HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="GROUP" />
+                                            <ui:Icon Classes="sortArrow" Classes.flipped="{Binding SortReversed}" Data="{StaticResource IconChevronDown}" Width="10" Height="10"
+                                                     IsVisible="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=group}" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Grid.Column="7" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=points}"
                                             Command="{Binding SetSortCommand}" CommandParameter="points" HorizontalAlignment="Left">
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="POINTS" />
@@ -1050,7 +1061,7 @@
                                                      IsVisible="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=points}" />
                                         </StackPanel>
                                     </Button>
-                                    <Button Grid.Column="7" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=completions}"
+                                    <Button Grid.Column="8" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=completions}"
                                             Command="{Binding SetSortCommand}" CommandParameter="completions" HorizontalAlignment="Left" ToolTip.Tip="Completions">
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="DONE" />
@@ -1058,7 +1069,7 @@
                                                      IsVisible="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=completions}" />
                                         </StackPanel>
                                     </Button>
-                                    <Button Grid.Column="8" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=date}"
+                                    <Button Grid.Column="9" Theme="{StaticResource BareButton}" Classes="colHead" Classes.selected="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=date}"
                                             Command="{Binding SetSortCommand}" CommandParameter="date" HorizontalAlignment="Left">
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="DATE" />
@@ -1066,7 +1077,7 @@
                                                      IsVisible="{Binding Sort, Converter={StaticResource Eq}, ConverterParameter=date}" />
                                         </StackPanel>
                                     </Button>
-                                        <TextBlock Grid.Column="9" Classes="colHeadText" Text="ZONES" ToolTip.Tip="Stages (on a linear map, the map itself), then bonuses: green = done" />
+                                        <TextBlock Grid.Column="10" Classes="colHeadText" Text="ZONES" ToolTip.Tip="Stages (on a linear map, the map itself), then bonuses: green = done" />
                                     </Grid>
                                     <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource RecordListTemplate}" Focusable="False" />
                                 </StackPanel>

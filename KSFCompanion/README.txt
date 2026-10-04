@@ -143,8 +143,11 @@ The Records tab (top of the window)
     the top 10 your rank with your group: #523 · G2 - hover it for how many players have a time
     there), points, completions, when you set it, and bars for the stages (one for the whole map
     on a linear map) and the bonuses, green for the ones you've done and red for the rest.
-  - Sorted like ksf.surf (points) or by rank, time, WR diff, completions, date, tier or name; in
-    the list, click a column's name to sort by it. Each order starts with the best; the button
+  - Sorted like ksf.surf (points) or by rank, group, time, WR diff, completions, date, tier or
+    name; in the list, click a column's name to sort by it. Rank goes by the number itself (a
+    group is a run of places on one map, so a G4 on a small map can be a better rank than a G3);
+    group goes by the group - the top 10, then groups 1 to 6 - and by rank within each. In the
+    list the rank and the group have a column each. Each order starts with the best; the button
     next to them (or clicking the order that's on again) turns it round: the fewest points, the
     worst rank, the longest, the furthest from the record, the fewest completions, the oldest,
     the hardest, Z-A - maps you haven't finished stay at the end either way.

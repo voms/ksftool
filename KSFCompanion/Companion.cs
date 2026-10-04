@@ -1596,7 +1596,7 @@ namespace KsfCompanion
                     ShowPlaceProgress();
                 }
                 // In order of rank, the rows go where their places put them now that they're in.
-                if (vm.Records.Sort == "rank") vm.Records.Refilter();
+                if (vm.Records.Sort is "rank" or "group") vm.Records.Refilter();
             }
             finally
             {

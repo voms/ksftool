@@ -183,8 +183,8 @@ It runs on X11 and on Wayland desktops (through XWayland).
 - ksf.surf's records page only shows your group below the top 10, so each map's rank is read from its own leaderboard
   in the background (the maps on show first) and kept: it's read again when your time on the map changes, or after a
   few days.
-- Sort and filter like the site (every order best-to-worst or worst-to-best), plus "Zones left": maps you've finished
-  with stages or bonuses still to do.
+- Sort and filter like the site (every order best-to-worst or worst-to-best), by your rank or by your group, plus
+  "Zones left": maps you've finished with stages or bonuses still to do.
 
 ### Binds
 ![Binds](docs/binds-boreas.png)
